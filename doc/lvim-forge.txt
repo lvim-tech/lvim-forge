@@ -1,0 +1,419 @@
+*lvim-forge.txt*        Magit Forge (forge.el) replica for the lvim-tech ecosystem
+
+==============================================================================
+CONTENTS                                                    *lvim-forge-contents*
+
+  1. Introduction ......................... |lvim-forge-introduction|
+  2. Requirements ......................... |lvim-forge-requirements|
+  3. Installation ......................... |lvim-forge-installation|
+  4. Quickstart ........................... |lvim-forge-quickstart|
+  5. Transport & auth ..................... |lvim-forge-transport|
+  6. Commands ............................. |lvim-forge-commands|
+  7. Panels & mappings .................... |lvim-forge-mappings|
+  8. Transients ........................... |lvim-forge-transients|
+  9. Plug maps ............................ |lvim-forge-plug|
+  10. Setup & configuration ............... |lvim-forge-setup|
+  11. Public API .......................... |lvim-forge-api|
+  12. Events .............................. |lvim-forge-events|
+  13. lvim-git integration ................ |lvim-forge-integration|
+  14. Health .............................. |lvim-forge-health|
+  15. Limitations & roadmap ............... |lvim-forge-limitations|
+
+==============================================================================
+1. INTRODUCTION                                         *lvim-forge-introduction*
+
+lvim-forge is the in-house Magit Forge (forge.el) replica for the lvim-tech
+ecosystem: pull requests, issues, code review and notifications for GitHub,
+GitLab, Gitea/Forgejo and Codeberg, sitting alongside its sibling lvim-git.
+
+Like Forge, lvim-forge keeps a local SQLite cache of every topic (issue / PR),
+post, review, thread and notification. Every view renders from that cache —
+instant and fully available offline. An explicit pull reconciles the cache with
+the forge API; mutations go straight to the API and upsert the response back
+into the cache (no optimistic writes — the API response is the truth).
+
+Internally lvim-forge is a suite of independently-usable components over a
+shared core (client/* transports + db + sync + model + config + state +
+highlights). Each UI component (topics / topic / review / notifications /
+dispatch / composer / status-section / completion) and refs has its own
+`enabled` flag, depends only on the shared core (never on another component),
+and degrades cleanly when a dependency is missing — a disabled component loads
+NOTHING (no require, no autocmd, no keymap).
+
+Forge support~
+
+  Forge               Transport               Notifications  Resolve  Draft
+  GitHub              gh CLI or curl REST      yes            GraphQL  GraphQL
+  GitLab              glab CLI or curl REST    yes (todos)    REST     Draft:
+  Gitea / Forgejo     curl REST                yes            no       WIP:
+  Codeberg            curl REST                yes            no       WIP:
+
+Capabilities are driven by a per-forge caps matrix — the UI only offers what a
+forge supports, never a hard-coded `if forge == …`. Codeberg is hosted Forgejo
+and runs the Gitea backend (host-driven; one implementation). Bitbucket is a v2
+candidate: the caps model already admits it.
+
+==============================================================================
+2. REQUIREMENTS                                         *lvim-forge-requirements*
+
+Hard dependencies:
+
+  - Neovim >= 0.10 (vim.system, vim.uv, vim.json)
+  - lvim-ui, lvim-utils, lvim-icons (panel chassis + palette/store/merge +
+    file devicons)
+  - sqlite.lua (via lvim-utils.store) — the topic cache IS the plugin; without
+    it lvim-forge cannot run (health reports it as an error)
+  - curl — the REST transport (and the only transport for gitea/codeberg)
+
+Optional:
+
+  - gh / glab — the CLI transports for GitHub / GitLab (used automatically when
+    installed and authenticated)
+  - tea — read only for a gitea/codeberg token when auth.gitea.tea = true
+  - lvim-git — enables the diff hand-off (review workspace, PR diff), the status
+    Forge section, and the refresh seam after a checkout / merge
+
+==============================================================================
+3. INSTALLATION                                         *lvim-forge-installation*
+
+Install with the lvim-tech lvim-installer, or with Neovim's native `vim.pack`:
+>lua
+    vim.pack.add({
+        { src = "https://github.com/kkharji/sqlite.lua" }, -- topic cache backend
+        { src = "https://github.com/lvim-tech/lvim-utils" },
+        { src = "https://github.com/lvim-tech/lvim-ui" },
+        { src = "https://github.com/lvim-tech/lvim-icons" },
+        { src = "https://github.com/lvim-tech/lvim-forge" },
+    })
+    require("lvim-forge").setup({})
+<
+setup() merges your options into the live configuration in place, registers the
+self-theming highlights, wires the `:LvimForge` command + the <Plug> maps, and
+lazily bootstraps each enabled component on first use.
+
+==============================================================================
+4. QUICKSTART                                             *lvim-forge-quickstart*
+>
+    :LvimForge add        track the current repository in the local cache
+    :LvimForge pull       reconcile the cache with the forge
+    :LvimForge            open the topic list (the default view)
+    :LvimForge dispatch   the discoverable menu of every command (also `?`)
+<
+`:LvimForge add` registers a repo (no network); `:LvimForge pull` fetches it.
+Thereafter every view renders instantly from the cache and refreshes on the
+next pull.
+
+==============================================================================
+5. TRANSPORT & AUTH                                       *lvim-forge-transport*
+
+lvim-forge reaches a forge through one request seam with two transports:
+
+  - "auto" (default)  gh / glab api when the CLI is installed AND authenticated
+                      (probed once, cached), else curl + a resolved token.
+  - "cli"             force the CLI (curl for gitea/codeberg).
+  - "rest"            force curl everywhere.
+
+For the REST transport a token is resolved live per request (first hit wins,
+probed once, reported by :checkhealth, and NEVER persisted to the DB):
+
+  1. the per-forge auth.<forge>.token — a string, or a function
+  2. its auth.<forge>.env environment variable (e.g. GITHUB_TOKEN)
+  3. ~/.netrc (machine <host> … password <token>) when auth.netrc = true
+  4. for gitea/codeberg, the tea CLI logins when auth.gitea.tea = true
+
+Only the token SOURCE (never the token itself) is ever surfaced, in health.
+
+==============================================================================
+6. COMMANDS                                                 *lvim-forge-commands*
+
+                                                                     *:LvimForge*
+:LvimForge [subcommand] [area|float|bottom|tab] [args]
+
+The layout token is recognised ANYWHERE in the arguments and is sticky for the
+session; all four layouts work for every view. A bare :LvimForge opens the
+topic list (the default view).
+
+  topics | issues | pulls    the topic list, optionally pre-filtered to a kind
+  topic <n>                  the topic buffer for issue / PR n
+  create [issue|pr]          the composer to create an issue or a pull request
+  comment <n>                the composer to comment on topic n
+  review [n]                 the review workspace for PR n (or the branch's PR)
+  review submit [n]          the submit-review transient for PR n
+  checkout <n> [worktree]    check out PR n into a branch (or a worktree)
+  merge <n> [merge|squash|rebase]  merge PR n (a method merges directly;
+                             none opens the merge transient)
+  pull [--notifications] [selective|full]  reconcile the cache with the forge
+  notifications [pull]       the notifications inbox (pull fetches only notifs)
+  add [remote|owner/name] [full|selective]  track the current repo in the cache
+  remove                     untrack the current repo (cascade-deletes its rows)
+  repos                      list the tracked repositories
+  dispatch                   the dispatch menu of every command
+
+==============================================================================
+7. PANELS & MAPPINGS                                        *lvim-forge-mappings*
+
+Every panel is a canonical lvim-ui surface; `g?` shows its keymap cheat-sheet
+and `?` opens the dispatch. `q` / <Esc> closes.
+
+Topic list~
+  j / k          next / previous topic
+  <CR>           open the topic
+  i / p          filter kind: issues / pulls
+  o / c          filter state: open / closed
+  m / s / r      involvement: mine / assigned / review-requested
+  /              search (label: author: milestone: mark: #n + text)
+  P              pull (sync with the forge)
+  n              create a topic
+  N              notifications inbox
+
+Topic buffer~
+  ]] / [[        next / previous section
+  <CR>           fold a section · diff the file under the cursor
+  l / h          expand / collapse the fold under the cursor
+  c / e / E      comment / edit post (author-gated) / edit title
+  L / A / M / R  labels / assignees / milestone / reviewers
+  s              close / reopen
+  m / W          merge (transient) / draft toggle
+  o / O          checkout the PR / in a worktree
+  d              full PR diff base…head
+  v              review workspace (threads on the diff)
+  B / Y          browse the topic on the web / yank its URL
+
+Review workspace~
+  ]t / [t        next / previous review thread (all files)
+  <Tab> za <CR>  expand / collapse the thread on this line
+  ]f / [f        next / previous file (diff)
+  ]c / [c        next / previous hunk (diff)
+  cc             new comment on this line (visual: a range comment)
+  cr             reply to the thread on this line
+  cx             resolve / unresolve the thread
+  cs             submit review (approve / request-changes / comment)
+
+Notifications inbox~
+  <CR>           open the topic (marks it read)
+  r / R          toggle read-state / mark all read
+  u / a          filter: unread / all
+  P              pull notifications
+
+Composer~
+  <C-c><C-c>     submit
+  <C-c><C-k> q   cancel (dirty buffers confirm)
+  <C-x><C-o>     @user / #topic completion (also <C-Space>)
+  gd             toggle draft (PR mode)
+
+==============================================================================
+8. TRANSIENTS                                             *lvim-forge-transients*
+
+lvim-forge's verb popups run on the shared lvim-ui transient engine (grouped
+switches / options / actions, direct hotkeys, a visibility level 1-7, session
+`set` / persistent `save` / `reset`):
+
+  dispatch        the caps-gated, context-aware top-level menu
+  pull            --notifications-only / --full / --selective + a closed-since
+  list-filter     kind/state/involvement + label:/author:/milestone:/mark:/text
+  topic-edit      close / reopen (all forges) + lock / unlock (caps-gated)
+  merge           method (merge/squash/rebase) · delete-branch · commit message
+  submit-review   verdict (comment/approve/request-changes) · submit / discard
+
+==============================================================================
+9. PLUG MAPS                                                   *lvim-forge-plug*
+
+None are installed by default; map the ones you want:
+>lua
+    vim.keymap.set("n", "<leader>ft", "<Plug>(LvimForgeTopics)")
+    vim.keymap.set("n", "<leader>fp", "<Plug>(LvimForgePull)")
+    vim.keymap.set("n", "<leader>fn", "<Plug>(LvimForgeNotifications)")
+    vim.keymap.set("n", "gf", "<Plug>(LvimForgeOpenAtPoint)")
+<
+  <Plug>(LvimForgeTopics)         open the topic list
+  <Plug>(LvimForgePull)           pull the current repo
+  <Plug>(LvimForgeNotifications)  open the notifications inbox
+  <Plug>(LvimForgeOpenAtPoint)    #123 / a branch / a commit → its topic
+
+==============================================================================
+10. SETUP & CONFIGURATION                                     *lvim-forge-setup*
+
+setup() merges your options into the live config table IN PLACE, so a later
+change (e.g. a control-center toggle) takes effect on the next open — no
+restart. The complete option tree with every default (kept in sync with
+lua/lvim-forge/config.lua):
+>lua
+    require("lvim-forge").setup({
+        remote = nil,             -- git remote naming the forge repo (nil = upstream|origin)
+        hosts = {},               -- self-hosted host → forge family
+        transport = "auto",       -- "auto" | "cli" | "rest"
+        auth = {
+            netrc = true,
+            github = { token = nil, env = "GITHUB_TOKEN" },
+            gitlab = { token = nil, env = "GITLAB_TOKEN" },
+            gitea = { token = nil, env = "GITEA_TOKEN", tea = false },
+            codeberg = { token = nil, env = "CODEBERG_TOKEN" },
+        },
+        limits = { floor = 50 },  -- pause sync below this many remaining API calls
+        pull = {
+            on_open = true,
+            stale_after = 300,    -- seconds
+            closed_since = "1y",  -- "6m" | "1y" | "all"
+            max_pages = 10,
+        },
+        database = {
+            prune_closed_after = nil, -- nil = keep everything
+            path = nil,           -- nil = stdpath("data")/lvim-forge/lvim-forge.db
+        },
+        topics = { enabled = true, limit = 500 },
+        topic = { enabled = true },
+        review = {
+            enabled = true,
+            show_resolved = false,
+            virt_lines = true,
+            default_verdict = "comment", -- "comment"|"approve"|"request-changes"
+        },
+        notifications = {
+            enabled = true,
+            poll = false,         -- optional timer polling (OFF by default)
+            interval = 300,       -- seconds, when poll = true
+            reasons = {           -- reason → { icon, label } badge (single-width Nerd glyph)
+                review_requested = { icon = "\u{f06e}", label = "review" },
+                mention = { icon = "\u{f0e0}", label = "mention" },
+                team_mention = { icon = "\u{f0c0}", label = "team" },
+                assign = { icon = "\u{f007}", label = "assign" },
+                author = { icon = "\u{f040}", label = "author" },
+                comment = { icon = "\u{f075}", label = "comment" },
+                state_change = { icon = "\u{f021}", label = "state" },
+                ci_activity = { icon = "\u{f085}", label = "ci" },
+                push = { icon = "\u{f1e0}", label = "push" },
+                subscribed = { icon = "\u{f0f3}", label = "subscribed" },
+                security_alert = { icon = "\u{f132}", label = "security" },
+                invitation = { icon = "\u{f0e0}", label = "invite" },
+                manual = { icon = "\u{f0f3}", label = "manual" },
+                your_activity = { icon = "\u{f040}", label = "you" },
+            },
+        },
+        status_section = { enabled = true, max_rows = 5 },
+        completion = { enabled = true, gitcommit = true },
+        checkout = {
+            branch = "head",      -- "head" | "pr/<n>"
+            track = true,
+            branch_prefix = "pr/",
+            worktree_dir = "{repo}-{branch}",
+        },
+        create = {
+            push_head = "ask",    -- "ask" | "always" | "never"
+        },
+        merge = {
+            default_method = "merge", -- "merge" | "squash" | "rebase"
+            delete_branch = false,
+            methods = nil,        -- nil = the forge caps
+        },
+        transient = {
+            level = 4,            -- Magit levels 1-7
+            save_defaults = true,
+        },
+        layouts = {
+            topics = "tab",
+            topic = "tab",
+            review = "tab",
+            notifications = "area",
+            composer = "float",
+            dispatch = "float",
+        },
+        keymaps = {},
+        icons = {
+            issue = "\u{f41b}",
+            pull = "\u{f407}",
+            merged = "\u{f419}",
+            closed = "\u{f41d}",
+            draft = "\u{f10c}",
+            check_pass = "\u{f00c}",
+            check_fail = "\u{f00d}",
+            check_pending = "\u{f252}",
+            comment = "\u{f075}",
+            review = "\u{f4a5}",
+            notification = "\u{f0f3}",
+        },
+        confirm_destructive = true,
+        hl = {},
+    })
+<
+==============================================================================
+11. PUBLIC API                                                  *lvim-forge-api*
+>lua
+    local forge = require("lvim-forge")
+
+    forge.setup(opts)              -- merge options into the live config
+    forge.topics(opts)             -- open the topic list (also issues / pulls)
+    forge.topic(number, opts)      -- open a topic buffer
+    forge.review(number)           -- open the review workspace
+    forge.notifications()          -- open the notifications inbox
+    forge.dispatch()               -- open the dispatch menu
+    forge.pull(opts, cb)           -- reconcile the cache with the forge (async)
+    forge.request(spec, cb)        -- the low-level client request seam
+
+    -- render-safe cache reads (the network never runs on these):
+    forge.repo(root_or_buf)        -- the detected forge-repo record, or nil
+    forge.is_tracked(root_or_buf)  -- whether the repo is in the local cache
+    forge.topics_list(filter)      -- the topic list model for a filter
+    forge.get_topic(number, kind)  -- a single topic
+    forge.pr_for_branch(branch)    -- the PR whose head matches a branch
+    forge.unread_count(root_or_buf)-- the unread notification count
+<
+==============================================================================
+12. EVENTS                                                   *lvim-forge-events*
+
+lvim-forge fires User autocommand events so consumers refresh instead of
+polling:
+
+  LvimForgePullStart             a repo pull begins ({ root })
+  LvimForgePullDone              a pull finishes ({ root, topics_changed, ok })
+  LvimForgeTopicChanged          a topic was mutated / re-pulled
+  LvimForgeNotificationsChanged  the unread notification count changed
+  LvimForgeReviewSubmitted       a pending review was submitted
+  LvimForgeRateLimit             remaining count dropped below limits.floor
+
+==============================================================================
+13. LVIM-GIT INTEGRATION                                 *lvim-forge-integration*
+
+When both are installed, lvim-forge softly enriches lvim-git (no lvim-git edit
+is required — it uses the public register_section / refresh / diff seams):
+
+  - a trailing Forge section in :LvimGit status listing open PRs / assigned
+    issues / review requests (status_section), each row opening its topic;
+  - #topic / @user completion and open-at-point in gitcommit buffers
+    (completion) — <Plug>(LvimForgeOpenAtPoint) resolves #123 to a topic and a
+    branch / commit to its PR;
+  - the review workspace overlays threads on lvim-git's diff, and a checkout /
+    merge calls lvim-git's refresh seam.
+
+==============================================================================
+14. HEALTH                                                   *lvim-forge-health*
+
+`:checkhealth lvim-forge` reports the Neovim baseline; the transport binaries
+(curl required; gh / glab / tea optional) and their auth; lvim-ui / lvim-utils
+/ lvim-icons / lvim-ui.transient + the optional lvim-git seam; the sqlite
+backend (mandatory — its absence is an error); the local database file path,
+on-disk schema version and tracked-repo count (with each repo's last-pull
+watermark); the current buffer's forge detection + resolved transport; the
+per-forge transport pick + token SOURCE (never the token); the enabled-
+components list; a public-API self-check; and config sanity.
+
+==============================================================================
+15. LIMITATIONS & ROADMAP                               *lvim-forge-limitations*
+
+  - Bitbucket is not yet a backend (v2) — the caps model already admits it;
+    only the backend module + normalizers are missing.
+  - Checks / commits / timeline events are not cached yet — those sections show
+    a placeholder and the Timeline synthesizes only opened / merged / closed.
+  - Gitea / Forgejo / Codeberg: thread resolve has no stable REST endpoint
+    (read-only), review replies + review-comment edits are omitted, and the
+    merge DB reconcile waits for the next pull.
+  - GitLab: review-comment edits need the owning discussion id; pr_files
+    additions / deletions are not parsed; involves-me selective pull is not
+    distinguished.
+  - Enterprise / self-hosted GraphQL: the draft toggle posts to the REST base's
+    /graphql (correct on github.com; Enterprise uses /api/graphql).
+  - Enhancement ideas (post-v1): suggested-changes apply, an offline mutation
+    queue, a reactions UI, auto-merge / merge-queue, cross-repo topic search,
+    CI deep-dive, review templates, an unread badge for a statusline / HUD.
+
+vim:tw=78:ts=8:noet:ft=help:norl:
+</content>
