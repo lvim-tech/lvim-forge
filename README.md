@@ -186,10 +186,7 @@ dispatch. `q` / `<Esc>` closes.
 | Key             | Action                                                  |
 | --------------- | ------------------------------------------------------- |
 | `j` / `k`       | next / previous topic                                   |
-| `<CR>`          | open the topic                                          |
-| `i` / `p`       | filter kind: issues / pulls                             |
-| `o` / `c`       | filter state: open / closed                             |
-| `m` / `s` / `r` | involvement: mine / assigned / review-requested         |
+| `<CR>`          | open the topic (or fire the focused filter button)      |
 | `/`             | search (`label: author: milestone: mark: #n` + text)    |
 | `P`             | pull (sync with the forge)                              |
 | `n`             | create a topic                                          |
@@ -228,9 +225,8 @@ dispatch. `q` / `<Esc>` closes.
 
 | Key       | Action                            |
 | --------- | --------------------------------- |
-| `<CR>`    | open the topic (marks it read)    |
+| `<CR>`    | open the topic (marks it read; or fire the focused filter button) |
 | `r` / `R` | toggle read-state / mark all read |
-| `u` / `a` | filter: unread / all              |
 | `P`       | pull notifications                |
 
 **Composer** — `<C-c><C-c>` submit, `<C-c><C-k>` / `q` cancel (dirty buffers confirm),

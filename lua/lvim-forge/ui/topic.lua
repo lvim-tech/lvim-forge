@@ -116,6 +116,12 @@ local GLYPH = {
     file_removed = "\u{f458}", --  nf-oct-diff_removed
     file_renamed = "\u{f47c}", --  nf-oct-diff_renamed
     branch = "\u{e725}", --  nf-dev-git_branch (base ← head)
+    -- footer verb glyphs (each verified single-width)
+    pencil = "\u{f448}", --  nf-oct-pencil (edit)
+    issue = "\u{f41b}", --  nf-oct-issue_opened (state)
+    diff = "\u{f440}", --  nf-oct-diff (diff)
+    question = "\u{f059}", --  nf-fa-question_circle (help)
+    close = "\u{f00d}", --  nf-fa-times (close)
 }
 
 ---@param msg string
@@ -554,15 +560,26 @@ function M.open(root, number, opts)
         end
         local out = {}
         local i = 0
+        local in_fence = false -- inside a ``` block: its CONTENT is code, not prose
         for line in (text:gsub("\r", "") .. "\n"):gmatch("(.-)\n") do
             i = i + 1
-            local group = "LvimForgeTitle"
-            if line:match("^#+%s") then
-                group = "LvimForgeNumber"
-            elseif line:match("^%s*```") then
-                group = "LvimForgeDate"
+            local group
+            if line:match("^%s*```") then
+                in_fence = not in_fence
+                group = "LvimForgeBodyFence"
+            elseif in_fence then
+                group = "LvimForgeBodyCode"
+            elseif line:match("^#+%s") then
+                group = "LvimForgeBodyHeading"
+            elseif line:match("^%s*>") then
+                group = "LvimForgeBodyQuote"
             elseif line:match("^%s*[-*+]%s") or line:match("^%s*%d+%.%s") then
-                group = "LvimForgeAuthor"
+                group = "LvimForgeBodyBullet"
+            else
+                -- Plain prose keeps the NORMAL fg: colour marks up the structure around the text, it does not
+                -- repaint the text itself (the body used to default to the topic TITLE's yellow — which turned
+                -- every description and comment into one flat yellow block).
+                group = "LvimForgeReviewBody"
             end
             out[#out + 1] = leaf(prefix .. "l" .. i, line, group)
         end
@@ -673,31 +690,38 @@ function M.open(root, number, opts)
     ---@param text string
     ---@param iso? string
     ---@return table
-    local function system_row(name, glyph, text, iso)
+    local function system_row(name, glyph, text, iso, group)
         local rel = rel_date(iso)
         local label = text .. (rel ~= "" and ("  " .. GLYPH.arrow .. " " .. rel) or "")
+        -- A STATE event carries its own semantic colour (the same hues the state chip/band use: opened green ·
+        -- closed red · merged magenta), so the timeline's turning points read at a glance. Everything else
+        -- stays the dim meta.
+        group = group or "LvimForgeDate"
         return {
             type = "action",
             name = "sys:" .. name,
             flat = true,
             tight = true,
             icon = " " .. glyph .. " ",
-            icon_hl = "LvimForgeDate",
+            icon_hl = group,
             label = label,
-            text_hl = "LvimForgeDate",
+            text_hl = group,
             run = function() end,
         }
     end
 
-    --- A comment as its own section (author ➤ rel-date header + body).
+    --- A comment as its own section (author ➤ rel-date header + body). The band wears the PARTICIPANT's own
+    --- stable accent (see `highlights.author_accent`), so one person's comments read as one colour down the
+    --- whole thread instead of every band being the same yellow.
     ---@param p table  a posts row (kind = comment)
+    ---@param m table  the topic model (its `topic.author` is the pinned owner colour)
     ---@return table
-    local function comment_section(p)
+    local function comment_section(p, m)
         local label = (p.author or "?") .. "  " .. GLYPH.arrow .. " " .. rel_date(p.created)
         return section(
             "cmt:" .. tostring(p.id),
             label,
-            "yellow",
+            highlights.author_accent(p.author, m.topic and m.topic.author, state.viewer[repo_row.host]),
             nil,
             body_rows("cmt" .. tostring(p.id) .. ":", p.body, "(empty comment)"),
             true,
@@ -774,12 +798,13 @@ function M.open(root, number, opts)
                 "opened",
                 GLYPH.dot,
                 ("%s opened this %s"):format(m.topic.author or "?", m.is_pr and "pull request" or "issue"),
-                m.topic.created
+                m.topic.created,
+                "LvimForgeOpen"
             )
         )
         for _, p in ipairs(m.posts) do
             if p.kind == "comment" then
-                add(p.created, comment_section(p))
+                add(p.created, comment_section(p, m))
             end
         end
         for _, rv in ipairs(m.reviews) do
@@ -793,7 +818,13 @@ function M.open(root, number, opts)
             local by = m.pr and m.pr.merged_by
             add(
                 m.topic.closed_at,
-                system_row("merged", config.icons.merged, "merged" .. (by and (" by " .. by) or ""), m.topic.closed_at)
+                system_row(
+                    "merged",
+                    config.icons.merged,
+                    "merged" .. (by and (" by " .. by) or ""),
+                    m.topic.closed_at,
+                    "LvimForgeMerged"
+                )
             )
         elseif m.topic.state == "closed" then
             add(
@@ -802,7 +833,8 @@ function M.open(root, number, opts)
                     "closed",
                     config.icons.closed,
                     "closed this " .. (m.is_pr and "pull request" or "issue"),
-                    m.topic.closed_at
+                    m.topic.closed_at,
+                    "LvimForgeClosed"
                 )
             )
         end
@@ -965,7 +997,12 @@ function M.open(root, number, opts)
             }
         end
         local rows = { topic_band(m), meta_band(m) }
-        rows[#rows + 1] = section("desc", "Description", "blue", nil, body_rows("desc:", m.topic.body), true, true)
+        -- The description is the topic AUTHOR's opening post, so its band reads exactly like every comment's
+        -- (`author ➤ rel-date`, in that participant's own accent) instead of being the one band labelled by
+        -- ROLE. The timeline's `opened this issue` event already says what it is.
+        local desc_label = (m.topic.author or "?") .. "  " .. GLYPH.arrow .. " " .. rel_date(m.topic.created)
+        local desc_accent = highlights.author_accent(m.topic.author, m.topic.author, state.viewer[repo_row.host])
+        rows[#rows + 1] = section("desc", desc_label, desc_accent, nil, body_rows("desc:", m.topic.body), true, true)
         vim.list_extend(rows, timeline_rows(m))
         if m.is_pr then
             rows[#rows + 1] = commits_section(m)
@@ -1603,12 +1640,18 @@ function M.open(root, number, opts)
     ---@return table[]
     local function subtitle()
         local r = db.repository(repo_id) or repo_row
-        local segs = { ("%s/%s"):format(r.owner, r.name), r.host }
+        -- Info-band canon: repo green · host teal · pulled date purple.
+        ---@type { text: string, accent?: string }[]
+        local parts = {
+            { text = GLYPH.repo .. " " .. ("%s/%s"):format(r.owner, r.name), accent = "green" },
+            { text = r.host, accent = "teal" },
+        }
         local pulled = rel_date(r.pulled_at)
         if pulled ~= "" then
-            segs[#segs + 1] = "pulled " .. pulled
+            parts[#parts + 1] = { text = "pulled " .. pulled, accent = "purple" }
         end
-        return { { icon = GLYPH.repo, text = table.concat(segs, " " .. GLYPH.arrow .. " "), hl = "LvimForgeAuthor" } }
+        local text, hls = hl.band_line(parts, " " .. GLYPH.arrow .. " ")
+        return { { text = text, hls = hls } }
     end
 
     -- ── autocmds (refresh from the DB on the sync events, for THIS repo + topic) ──
@@ -1649,24 +1692,45 @@ function M.open(root, number, opts)
     -- verbs appear only on a pull request), always ending in `g? help ● q close` so the panel is never a
     -- dead-end without a visible way out. ──
     local function build_footer()
-        local function chip(key, label, run)
-            return { key = key, label = label, no_hotkey = true, run = run }
+        --- One footer chip: its own GLYPH + its own palette accent, so the bar reads as distinct verbs
+        --- (comment blue · edit yellow · state orange · merge magenta · diff cyan · review green · help
+        --- teal · close red) instead of one flat legend. The glyph rides in the CAPTION (the footer kind is a
+        --- key badge — its lead box is the key itself), so the accent paints the glyph and the word together.
+        ---@param key string
+        ---@param label string
+        ---@param run function
+        ---@param icon string
+        ---@param accent string  a palette accent key
+        ---@return table
+        local function chip(key, label, run, icon, accent)
+            local a = hl.section_accent(accent).text
+            return {
+                key = key,
+                label = icon .. " " .. label,
+                no_hotkey = true,
+                run = run,
+                style = { icon = { normal = a, active = a, hover = a }, text = { normal = a, active = a, hover = a } },
+            }
         end
         local sep = { type = "separator", text = GLYPH.dot, style = { padding = { 1, 1 }, hl = "LvimUiFooterSep" } }
         local topic = db.get_topic(repo_id, number, opts.kind)
         local is_pr = topic and topic.kind == "pullreq"
-        local f = { chip("c", "comment", do_comment), chip("e", "edit", do_edit), chip("s", "state", do_state) }
+        local f = {
+            chip("c", "comment", do_comment, config.icons.comment, "blue"),
+            chip("e", "edit", do_edit, GLYPH.pencil, "yellow"),
+            chip("s", "state", do_state, GLYPH.issue, "orange"),
+        }
         if is_pr then
             f[#f + 1] = sep
-            f[#f + 1] = chip("m", "merge", do_merge)
-            f[#f + 1] = chip("d", "diff", do_full_diff)
-            f[#f + 1] = chip("v", "review", do_review)
+            f[#f + 1] = chip("m", "merge", do_merge, config.icons.merged, "magenta")
+            f[#f + 1] = chip("d", "diff", do_full_diff, GLYPH.diff, "cyan")
+            f[#f + 1] = chip("v", "review", do_review, config.icons.review, "green")
         end
         f[#f + 1] = sep
-        f[#f + 1] = chip("g?", "help", show_help)
+        f[#f + 1] = chip("g?", "help", show_help, GLYPH.question, "teal")
         f[#f + 1] = chip("q", "close", function(handle)
             handle.close()
-        end)
+        end, GLYPH.close, "red")
         return f
     end
 
@@ -1703,7 +1767,9 @@ function M.open(root, number, opts)
             -- Scheduled so this topic's teardown + workspace-exit settle first.
             if opts.from_list then
                 vim.schedule(function()
-                    require("lvim-forge.ui.topics").open({})
+                    -- `focus_number`: land the list's cursor back on the topic we drilled into, not on its
+                    -- first row (the list is REBUILT here, so the cursor has to be aimed explicitly).
+                    require("lvim-forge.ui.topics").open({ focus_number = number })
                 end)
             end
         end,

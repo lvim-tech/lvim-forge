@@ -65,7 +65,15 @@ end
 --- open in `tab` layout.
 ---@return { width: number, height: number }
 function M.slot()
-    return { width = 0.98, height = 0.96 }
+    -- Fill the tab's editor area EXACTLY (an absolute row count, not a screen fraction) — the same geometry
+    -- lvim-git's workspace uses. A `0.96 × lines` fraction overshoots by a row when `cmdheight > 0`: the
+    -- surface float then runs past the global statusline, so its footer bar lands behind it and the blank
+    -- "air" row above the footer becomes the visible bottom (an "extra row" + empty side margins). The
+    -- available content rows are `lines` minus the tabline (1) + statusline (1) + the `cmdheight` rows; the
+    -- surface centres it (its `math.max(1, …)` keeps the tabline row free), so the panel spans
+    -- tabline→statusline with no gap.
+    local avail = vim.o.lines - vim.o.cmdheight - 2
+    return { width = 1.0, height = math.max(10, avail) }
 end
 
 --- Focus the workspace tab for `view` (no-op when it is not open).
@@ -98,7 +106,31 @@ function M.enter(view)
     vim.bo[buf].bufhidden = "wipe"
     vim.bo[buf].buftype = "nofile"
     vim.bo[buf].swapfile = false
-    pcall(api.nvim_win_set_buf, api.nvim_get_current_win(), buf)
+    -- Name the backdrop so the tabline reads e.g. "Topics" / "Notifications" instead of "[No Name]".
+    pcall(api.nvim_buf_set_name, buf, (view:gsub("^%l", string.upper)))
+    local win = api.nvim_get_current_win()
+    pcall(api.nvim_win_set_buf, win, buf)
+    -- Strip the window CHROME on the backdrop: the fill-slot surface float covers it, but its thin margin
+    -- would otherwise leak the scratch buffer's line number ("1" top-left), its `~` end-of-buffer tildes, and
+    -- the sign/fold columns. A clean, code-free backdrop shows nothing in that margin.
+    for opt, val in pairs({
+        number = false,
+        relativenumber = false,
+        signcolumn = "no",
+        foldcolumn = "0",
+        statuscolumn = "",
+        colorcolumn = "",
+        cursorline = false,
+        list = false,
+        winfixbuf = true,
+    }) do
+        pcall(function()
+            vim.wo[win][opt] = val
+        end)
+    end
+    pcall(function()
+        vim.wo[win].fillchars = "eob: "
+    end)
     return false
 end
 

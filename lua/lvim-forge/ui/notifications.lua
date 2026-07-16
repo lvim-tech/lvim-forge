@@ -277,8 +277,8 @@ function M.open(opts)
                 id = "filter",
                 active = sel.filter,
                 buttons = {
-                    { id = "unread", label = "Unread", key = "u" },
-                    { id = "all", label = "All", key = "a" },
+                    { id = "unread", label = "Unread" },
+                    { id = "all", label = "All" },
                 },
             },
         }
@@ -553,10 +553,9 @@ function M.open(opts)
             title = "Forge notifications keymaps",
             items = {
                 { "j / k", "next / previous notification" },
-                { "<CR>", "open the topic (marks it read)" },
+                { "<CR>", "open the topic (marks it read; or fire the focused filter button)" },
                 { "r", "toggle read / unread" },
                 { "R", "mark all read" },
-                { "u / a", "filter: unread / all" },
                 { "P", "pull notifications" },
                 { "?", "dispatch (all commands)" },
                 { "g?", "this help" },
@@ -573,6 +572,8 @@ function M.open(opts)
     end
 
     -- ── keymaps ──────────────────────────────────────────────────────────────
+    -- NOTE: the filter band claims NO keys. A filter is switched by moving onto its button and pressing <CR>
+    -- (or clicking it) — as in every other lvim-tech panel. Bare letters stay free for the panel's actions.
     local function build_keymaps()
         return {
             { key = "r", run = do_toggle },
@@ -580,18 +581,6 @@ function M.open(opts)
             { key = "P", run = do_pull },
             { key = "?", run = open_dispatch },
             { key = "g?", run = show_help },
-            {
-                key = "u",
-                run = function()
-                    select("unread")
-                end,
-            },
-            {
-                key = "a",
-                run = function()
-                    select("all")
-                end,
-            },
         }
     end
 
@@ -601,8 +590,12 @@ function M.open(opts)
         local unread = db.notifications_unread()
         local scope = context_repo and ("%s/%s"):format(context_repo.owner, context_repo.name)
             or "all tracked repositories"
-        local segs = { scope, ("%d unread"):format(unread) }
-        return { { icon = GLYPH.bell, text = table.concat(segs, " " .. GLYPH.arrow .. " "), hl = "LvimForgeAuthor" } }
+        -- Info-band canon: scope green · unread count orange (the unread accent).
+        local text, hls = hl.band_line({
+            { text = GLYPH.bell .. " " .. scope, accent = "green" },
+            { text = ("%d unread"):format(unread), accent = "orange" },
+        }, " " .. GLYPH.arrow .. " ")
+        return { { text = text, hls = hls } }
     end
 
     -- ── autocmds (refresh from the DB on the sync events — the inbox spans repos) ──
@@ -647,7 +640,10 @@ function M.open(opts)
         layout = is_tab and "float" or layout,
         slot = is_tab and require("lvim-forge.ui.workspace").slot() or nil,
         pad = 0,
-        cursorline_hl = "LvimUiPeekCursorLine",
+        -- The NEUTRAL bg-only cursorline (as every rich lvim-tech panel uses): a notification row carries its
+        -- own per-segment colours (repo, reason badge, title, dim date), and the peek variant's yellow fg would
+        -- repaint the whole focused row one flat colour.
+        cursorline_hl = "LvimUiCursorLine",
         title_count = function()
             return { current = st.shown, total = total_count() }
         end,

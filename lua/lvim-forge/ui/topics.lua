@@ -23,6 +23,7 @@ local state = require("lvim-forge.state")
 local db = require("lvim-forge.db")
 local sync = require("lvim-forge.sync")
 local highlights = require("lvim-forge.highlights")
+local hl = require("lvim-utils.highlight")
 local detect = require("lvim-forge.client.detect")
 local workspace = require("lvim-forge.ui.workspace")
 local ui = require("lvim-ui")
@@ -335,27 +336,27 @@ function M.open(opts)
                 active = sel.kind,
                 buttons = {
                     { id = "all", label = "All" },
-                    { id = "issues", label = "Issues", key = "i" },
-                    { id = "pulls", label = "Pulls", key = "p" },
+                    { id = "issues", label = "Issues" },
+                    { id = "pulls", label = "Pulls" },
                 },
             },
             {
                 id = "state",
                 active = sel.state,
                 buttons = {
-                    { id = "open", label = "Open", key = "o" },
-                    { id = "closed", label = "Closed", key = "c" },
                     { id = "all", label = "All" },
+                    { id = "open", label = "Open" },
+                    { id = "closed", label = "Closed" },
                 },
             },
             {
                 id = "involvement",
                 active = sel.involvement,
                 buttons = {
-                    { id = "mine", label = "Mine", key = "m" },
-                    { id = "assigned", label = "Assigned", key = "s" },
-                    { id = "review-requested", label = "Review", key = "r" },
                     { id = "all", label = "All" },
+                    { id = "mine", label = "Mine" },
+                    { id = "assigned", label = "Assigned" },
+                    { id = "review-requested", label = "Review" },
                 },
             },
         }
@@ -555,10 +556,7 @@ function M.open(opts)
             title = "Forge topics keymaps",
             items = {
                 { "j / k", "next / previous topic" },
-                { "<CR>", "open the topic" },
-                { "i / p", "filter kind: issues / pulls" },
-                { "o / c", "filter state: open / closed" },
-                { "m / s / r", "involvement: mine / assigned / review-requested" },
+                { "<CR>", "open the topic (or fire the focused filter button)" },
                 { "/", "search (label: author: milestone: mark: #n + text)" },
                 { "P", "pull (sync with the forge)" },
                 { "a", "topic actions" },
@@ -622,19 +620,11 @@ function M.open(opts)
     end
 
     -- ── keymaps ──────────────────────────────────────────────────────────────
-    ---@type table<string, { dim: string, id: string }>
-    local FILTER_KEYS = {
-        i = { dim = "kind", id = "issues" },
-        p = { dim = "kind", id = "pulls" },
-        o = { dim = "state", id = "open" },
-        c = { dim = "state", id = "closed" },
-        m = { dim = "involvement", id = "mine" },
-        s = { dim = "involvement", id = "assigned" },
-        r = { dim = "involvement", id = "review-requested" },
-    }
-
+    -- NOTE: the filter band claims NO keys. A filter is switched by moving onto its button and pressing <CR>
+    -- (or clicking it) — as in every other lvim-tech panel (lvim-git binds no filter keys either). Bare
+    -- letters stay free for the panel's own actions.
     local function build_keymaps()
-        local km = {
+        return {
             { key = "/", run = prompt_query },
             { key = "P", run = do_pull },
             { key = "a", run = stub_actions },
@@ -643,34 +633,33 @@ function M.open(opts)
             { key = "?", run = open_dispatch },
             { key = "g?", run = show_help },
         }
-        for key, sel_spec in pairs(FILTER_KEYS) do
-            km[#km + 1] = {
-                key = key,
-                run = function()
-                    select(sel_spec.dim, sel_spec.id)
-                end,
-            }
-        end
-        return km
     end
 
     -- ── the subtitle repo band ───────────────────────────────────────────────
     ---@return table[]
     local function subtitle()
         local r = db.repository(repo_id) or repo_row
-        local segs = { ("%s/%s"):format(r.owner, r.name), r.host, r.tracked }
+        -- Per-part palette (the info-band canon): repo green · host teal · tracked branch cyan · pulled date
+        -- purple · unread badge orange — distinct hues via inline `hls`, never one flat colour.
+        ---@type { text: string, accent?: string }[]
+        local parts = {
+            { text = GLYPH.repo .. " " .. ("%s/%s"):format(r.owner, r.name), accent = "green" },
+            { text = r.host, accent = "teal" },
+            { text = r.tracked, accent = "cyan" },
+        }
         local pulled = rel_date(r.pulled_at)
         if pulled ~= "" then
-            segs[#segs + 1] = "pulled " .. pulled
+            parts[#parts + 1] = { text = "pulled " .. pulled, accent = "purple" }
         end
         -- The unread-notifications badge (the topics-title surface for the Phase-11 badge reader) — shown
         -- only when this repo has unread notifications; reactive via LvimForgePullDone (notifications
         -- piggyback the pull) + LvimForgeTopicChanged refreshes.
         local unread = db.notifications_unread(repo_id)
         if unread > 0 then
-            segs[#segs + 1] = ("%s %d"):format(config.icons.notification, unread)
+            parts[#parts + 1] = { text = ("%s %d"):format(config.icons.notification, unread), accent = "orange" }
         end
-        return { { icon = GLYPH.repo, text = table.concat(segs, " " .. GLYPH.arrow .. " "), hl = "LvimForgeAuthor" } }
+        local text, hls = hl.band_line(parts, " " .. GLYPH.arrow .. " ")
+        return { { text = text, hls = hls } }
     end
 
     -- ── autocmds (refresh from the DB on the sync events, for THIS repo) ──────
@@ -709,6 +698,24 @@ function M.open(opts)
         { label = "Topics", icon = GLYPH.repo, menu = true, rows = build_rows() },
     }
 
+    -- The row of `opts.focus_number`, if that topic is in the (filtered) list. Drilling into a topic CLOSES
+    -- this list and its `q` reopens it, so without this the cursor would land back on the first row every
+    -- time — the list is rebuilt, not restored. Resolved by NUMBER (not by the row index/name, which shifts
+    -- with the filter and with any topic pulled in meanwhile). `build_rows()` above filled the registry.
+    ---@param n? integer
+    ---@return string?
+    local function row_for_number(n)
+        if not n then
+            return nil
+        end
+        for name, t in pairs(st.registry) do
+            if type(t) == "table" and t.number == n then
+                return name
+            end
+        end
+        return nil
+    end
+
     -- A `tab` layout enters the dedicated workspace tabpage first (so the surface opens inside it).
     if is_tab then
         workspace.enter(VIEW)
@@ -722,7 +729,11 @@ function M.open(opts)
         layout = is_tab and "float" or layout,
         slot = is_tab and workspace.slot() or nil,
         pad = 0,
-        cursorline_hl = "LvimUiPeekCursorLine",
+        initial_row = row_for_number(opts.focus_number),
+        -- The NEUTRAL bg-only cursorline (as every rich lvim-tech panel uses): a topic row carries its own
+        -- per-segment colours (`#number` green, title yellow, label chips, author/date), and the peek variant's
+        -- yellow fg would repaint the whole focused row one flat colour.
+        cursorline_hl = "LvimUiCursorLine",
         title_count = function()
             return { current = st.shown, total = total_count() }
         end,
