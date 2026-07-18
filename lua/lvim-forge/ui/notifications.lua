@@ -513,7 +513,7 @@ function M.open(opts)
         end
         if config.confirm_destructive and count >= MANY then
             ui.confirm({
-                title = " Mark all read",
+                title = "Mark all read",
                 prompt = ("Mark all %d unread notifications read?"):format(count),
                 callback = function(yes)
                     if yes then
