@@ -197,6 +197,16 @@ function M.check()
                 health.info(("%s: transport = rest, no token found (public reads only, rate-limited)"):format(forge))
             else
                 health.ok(("%s: transport = rest, token source = %s"):format(forge, source))
+                -- A plaintext ~/.netrc token: nudge toward the encrypted wallet, only when it is installed
+                -- (the resolve chain already PREFERS the wallet, so this is a migration hint, not a warning).
+                if source == "netrc" and pcall(require, "lvim-keyring") then
+                    health.info(
+                        ("%s: token is in plaintext ~/.netrc — move it into the encrypted wallet: :LvimForge auth store %s"):format(
+                            forge,
+                            host
+                        )
+                    )
+                end
             end
         end
     end
