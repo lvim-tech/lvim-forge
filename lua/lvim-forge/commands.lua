@@ -42,6 +42,7 @@ local SUBCOMMANDS = {
     "note",
     "mark",
     "dispatch",
+    "auth",
 }
 
 ---@class LvimForgeCmd
@@ -546,6 +547,31 @@ local function do_dispatch()
     require("lvim-forge.ui.dispatch").open()
 end
 
+--- `:LvimForge auth store [host]` — store an API token for `host` in the lvim-keyring wallet (masked
+--- prompt), so `M.resolve` reads it from source "keyring". Prompts for the host when omitted.
+---@param p LvimForgeCmd
+local function do_auth(p)
+    local args = p.args or {}
+    if args[1] ~= "store" then
+        notify("usage: :LvimForge auth store [host]")
+        return
+    end
+    local auth = require("lvim-forge.client.auth")
+    local host = args[2]
+    if host and host ~= "" then
+        auth.store(host)
+        return
+    end
+    require("lvim-ui").input({
+        title = "Forge host (e.g. github.com)",
+        callback = function(ok, value)
+            if ok and value and value ~= "" then
+                auth.store(vim.trim(value))
+            end
+        end,
+    })
+end
+
 --- The dispatch table: subcommand → handler. Each handler lazily requires only its own component. The
 --- few verbs without a dedicated handler (browse/yank/note/mark) fall through to the not-built notify.
 ---@type table<string, fun(p: LvimForgeCmd)>
@@ -570,6 +596,7 @@ HANDLERS.checkout = do_checkout
 HANDLERS.merge = do_merge
 HANDLERS.review = do_review
 HANDLERS.dispatch = do_dispatch
+HANDLERS.auth = do_auth
 
 --- Run a subcommand programmatically (the facade path).
 ---@param sub string

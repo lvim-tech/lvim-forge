@@ -125,7 +125,7 @@ end
 --- then errors cleanly / falls back to the CLI transport). NEVER logs or returns the token in a message.
 ---@param forge string
 ---@param host string
----@return { token: string, source: "config"|"env"|"netrc"|"tea" }?
+---@return { token: string, source: "config"|"keyring"|"env"|"netrc"|"tea" }?
 function M.resolve(forge, host)
     local a = (config.auth or {})[forge] or {}
 
@@ -139,7 +139,18 @@ function M.resolve(forge, host)
         return { token = tok, source = "config" }
     end
 
-    -- (2) the env var (per-forge overridable).
+    -- (2) the lvim-keyring wallet (a per-user encrypted secrets agent), when installed AND unlocked.
+    -- pcall-required so forge NEVER hard-depends on it; `get_sync` does not prompt (a locked wallet
+    -- returns nothing and we fall through), so this never blocks the request behind a modal.
+    local ok_kr, kr = pcall(require, "lvim-keyring")
+    if ok_kr then
+        local val = kr.get_sync("forge/" .. host, 2000)
+        if type(val) == "string" and val ~= "" then
+            return { token = val, source = "keyring" }
+        end
+    end
+
+    -- (3) the env var (per-forge overridable).
     local env = a.env
     if type(env) == "string" and env ~= "" then
         local val = vim.env[env] or os.getenv(env)
@@ -148,7 +159,7 @@ function M.resolve(forge, host)
         end
     end
 
-    -- (3) ~/.netrc.
+    -- (4) ~/.netrc.
     if config.auth and config.auth.netrc then
         local val = netrc_token(host)
         if val then
@@ -156,7 +167,7 @@ function M.resolve(forge, host)
         end
     end
 
-    -- (4) the tea CLI logins (gitea/codeberg, opt-in).
+    -- (5) the tea CLI logins (gitea/codeberg, opt-in).
     if (forge == "gitea" or forge == "codeberg") and a.tea then
         local val = tea_token(host)
         if val then
@@ -167,12 +178,47 @@ function M.resolve(forge, host)
     return nil
 end
 
+--- Store a token for `host` in the lvim-keyring wallet (prompts masked), so future resolves read it
+--- from source "keyring". Errors cleanly when lvim-keyring is not installed.
+---@param host string
+function M.store(host)
+    local ok_kr, kr = pcall(require, "lvim-keyring")
+    if not ok_kr then
+        vim.notify("lvim-forge: lvim-keyring is not installed", vim.log.levels.WARN)
+        return
+    end
+    kr.ensure_unlocked(function(unlocked, uerr)
+        if not unlocked then
+            if uerr and uerr ~= "" then
+                vim.notify("lvim-forge: " .. uerr, vim.log.levels.WARN)
+            end
+            return
+        end
+        require("lvim-ui").input({
+            title = ("Token for %s"):format(host),
+            mask = true,
+            callback = function(confirmed, value)
+                if not confirmed or value == "" then
+                    return
+                end
+                kr.set("forge/" .. host, value, nil, function(sok, serr)
+                    vim.notify(
+                        sok and ("lvim-forge: token stored in the keyring for " .. host)
+                            or ("lvim-forge: " .. (serr or "failed to store")),
+                        sok and vim.log.levels.INFO or vim.log.levels.WARN
+                    )
+                end)
+            end,
+        })
+    end)
+end
+
 --- Report the token SOURCE for a forge/host without exposing the token (for health). Returns the source
 --- string, or "none" when nothing resolves. When the CLI is authed, that is reported preferentially by
 --- the caller since the CLI owns auth (this only inspects the REST token chain).
 ---@param forge string
 ---@param host string
----@return "config"|"env"|"netrc"|"tea"|"none"
+---@return "config"|"keyring"|"env"|"netrc"|"tea"|"none"
 function M.source(forge, host)
     local r = M.resolve(forge, host)
     return r and r.source or "none"
