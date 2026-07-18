@@ -239,6 +239,12 @@ function M.setup(opts)
     require("lvim-utils.highlight").bind(highlights.build)
     require("lvim-forge.commands").setup()
 
+    -- Register the `forge/` parent with the wallet (if installed), so `:LvimKeyring` renders forge tokens
+    -- under a code-fork icon + accent. pcall-guarded: lvim-forge never hard-depends on lvim-keyring.
+    pcall(function()
+        require("lvim-keyring").register_namespace("forge", { icon = "", accent = "magenta" })
+    end)
+
     -- User-bindable <Plug> maps (none installed by default). They route through the facade so a user maps
     -- them without knowing the command layer.
     local map = function(lhs, fn)
