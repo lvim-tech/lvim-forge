@@ -8,14 +8,23 @@
 -- `tea` CLI has no raw-API passthrough). It needs a resolved TOKEN (from `client/auth`) — passed in the
 -- ctx; the transport itself never resolves auth.
 --
--- Header/body separation: curl writes the header block to a dump file (`-D`) we point at stderr, and the
--- HTTP status is appended to stdout via `-w`, so the JSON body on stdout stays clean (no `-i` inlining
--- to split). `next` is computed from `Link: rel="next"` (GitHub/Gitea) or `x-next-page` (GitLab) as an
--- ABSOLUTE next-page URL, so `client/init` can page by just re-issuing with `spec.url = res.next`.
+-- Header/body separation: curl writes the header block to a PRIVATE dump tempfile (`-D <file>`, read +
+-- deleted in the callback) — not stderr, so stderr stays purely transport errors and the two never
+-- interleave — and the HTTP status is appended to stdout via `-w`, so the JSON body on stdout stays clean
+-- (no `-i` inlining to split). `next` is computed from `Link: rel="next"` (GitHub/Gitea) or `x-next-page`
+-- (GitLab) as an ABSOLUTE next-page URL, so `client/init` can page by just re-issuing with `spec.url =
+-- res.next`.
+--
+-- Token safety: the auth header is NEVER placed in curl's argv (argv is world-readable via `ps` /
+-- `/proc/<pid>/cmdline`). It is written to a 0600 curl config file (`-K <file>`, `header = "…"`) that
+-- exists only for the duration of the request and is deleted in the callback. Non-secret headers stay in
+-- argv.
 --
 ---@module "lvim-forge.client.http"
 
 local runner = require("lvim-forge.client.runner")
+
+local uv = vim.uv or vim.loop
 
 local M = {}
 
@@ -143,6 +152,51 @@ local function auth_header(forge, token)
     end
 end
 
+--- Escape a string for a double-quoted curl config value (`header = "…"`). Backslash and double-quote are
+--- the only bytes curl treats specially inside the quotes.
+---@param s string
+---@return string
+local function cfg_escape(s)
+    return (s:gsub("\\", "\\\\"):gsub('"', '\\"'))
+end
+
+--- Write `content` to `path` with mode 0600, creating it owner-only from the outset (no post-chmod race).
+--- Used for the auth-token curl config so the secret is never group/other-readable.
+---@param path string
+---@param content string
+---@return boolean ok
+local function write_private(path, content)
+    local fd = uv.fs_open(path, "w", tonumber("600", 8))
+    if not fd then
+        return false
+    end
+    uv.fs_write(fd, content)
+    uv.fs_close(fd)
+    return true
+end
+
+--- Read the whole of `path` (or "" when it is absent / unreadable). Used for the header dump tempfile.
+---@param path string
+---@return string
+local function read_file(path)
+    local fd = uv.fs_open(path, "r", tonumber("600", 8))
+    if not fd then
+        return ""
+    end
+    local stat = uv.fs_fstat(fd)
+    local data = stat and uv.fs_read(fd, stat.size, 0) or ""
+    uv.fs_close(fd)
+    return data or ""
+end
+
+--- Delete `path`, ignoring a missing file (curl may not have created the dump on a spawn failure).
+---@param path? string
+local function unlink(path)
+    if path then
+        pcall(uv.fs_unlink, path)
+    end
+end
+
 --- Perform ONE request page via curl. `ctx = { forge, host, base, token? }`; `spec = { method?, path?,
 --- url?, query?, body?, headers?, timeout? }` (`spec.url` — a full next-page URL — wins over path+query).
 --- `cb(res, err)`: on success `res = { status, headers, body, raw, next, rate }` (body is JSON-decoded
@@ -159,6 +213,9 @@ function M.request(ctx, spec, cb)
     local method = (spec.method or "GET"):upper()
     local timeout_s = math.max(1, math.floor((spec.timeout or 30000) / 1000))
 
+    -- Header dump goes to its own tempfile (not stderr), so stderr carries only transport errors.
+    local dump_path = vim.fn.tempname()
+
     local argv = {
         "curl",
         "-sS",
@@ -167,16 +224,24 @@ function M.request(ctx, spec, cb)
         "-X",
         method,
         "-D",
-        "/dev/stderr", -- dump headers to stderr; body stays clean on stdout
+        dump_path, -- dump headers to a private file; body stays clean on stdout, stderr stays errors-only
         "-w",
         "\n%{http_code}", -- append the status as the final stdout line
         "-H",
         "Accept: application/json",
     }
-    -- Auth.
+    -- Auth — the token header is written to a 0600 curl config (`-K`), NEVER argv, so it can't be read out
+    -- of `ps` / `/proc/<pid>/cmdline` for the life of the request.
+    local cfg_path
     if ctx.token and ctx.token ~= "" then
         local h, v = auth_header(ctx.forge, ctx.token)
-        vim.list_extend(argv, { "-H", h .. ": " .. v })
+        cfg_path = vim.fn.tempname()
+        if not write_private(cfg_path, ('header = "%s"\n'):format(cfg_escape(h .. ": " .. v))) then
+            unlink(dump_path)
+            cb(nil, { kind = "transport", message = "could not create a secure curl config for the auth token" })
+            return
+        end
+        vim.list_extend(argv, { "-K", cfg_path })
     end
     -- Caller headers.
     for k, v in pairs(spec.headers or {}) do
@@ -193,6 +258,10 @@ function M.request(ctx, spec, cb)
     argv[#argv + 1] = url
 
     runner.run(argv, { stdin = type(body) == "string" and body or nil }, function(res)
+        -- Read the header dump, then delete both tempfiles regardless of outcome (secret never lingers).
+        local dump = read_file(dump_path)
+        unlink(dump_path)
+        unlink(cfg_path)
         if res.code ~= 0 and (res.stdout == "" or res.stdout == nil) then
             cb(nil, { kind = "transport", message = "curl exit " .. res.code .. ": " .. vim.trim(res.stderr) })
             return
@@ -204,7 +273,7 @@ function M.request(ctx, spec, cb)
             raw, status_str = out, nil
         end
         local status = status_str and tonumber(status_str) or nil
-        local headers, header_status = parse_headers(res.stderr or "")
+        local headers, header_status = parse_headers(dump)
         status = status or header_status
         -- JSON-decode the body when it parses; else keep the raw string.
         local decoded = raw
