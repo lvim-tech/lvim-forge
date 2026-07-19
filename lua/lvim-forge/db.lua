@@ -372,6 +372,18 @@ local function upsert(name, where, row, preserve)
     return (id ~= false) and id or nil
 end
 
+--- Insert `row` directly (no natural-key match), returning its id or nil. Used by the upsert wrappers when
+--- their forge_id natural key is NULL: a nil value is DROPPED from the `where` table (the key just vanishes),
+--- so `upsert` would match every row sharing the remaining keys and overwrite an unrelated one instead of
+--- inserting — pending-review rows legitimately carry a NULL forge_id and must coexist.
+---@param name string
+---@param row table
+---@return integer? id
+local function insert_row(name, row)
+    local id = M.get():insert(name, row)
+    return (id ~= false) and id or nil
+end
+
 -- ── repositories ──────────────────────────────────────────────────────────────
 
 --- Upsert a repository row (natural key host/owner/name). `tracked` and the cursors are preserved
@@ -683,6 +695,9 @@ end
 ---@param row table
 ---@return integer? id
 function M.upsert_post(row)
+    if row.forge_id == nil then
+        return insert_row("posts", row)
+    end
     return upsert("posts", { topic_id = row.topic_id, forge_id = row.forge_id }, row)
 end
 
@@ -690,6 +705,9 @@ end
 ---@param row table
 ---@return integer? id
 function M.upsert_review(row)
+    if row.forge_id == nil then
+        return insert_row("reviews", row)
+    end
     return upsert("reviews", { topic_id = row.topic_id, forge_id = row.forge_id }, row)
 end
 
@@ -697,6 +715,9 @@ end
 ---@param row table
 ---@return integer? id
 function M.upsert_thread(row)
+    if row.forge_id == nil then
+        return insert_row("threads", row)
+    end
     return upsert("threads", { topic_id = row.topic_id, forge_id = row.forge_id }, row)
 end
 
@@ -1094,6 +1115,9 @@ end
 ---@param row table
 ---@return integer? id
 function M.upsert_notification(row)
+    if row.forge_id == nil then
+        return insert_row("notifications", row)
+    end
     return upsert("notifications", { forge_id = row.forge_id }, row)
 end
 

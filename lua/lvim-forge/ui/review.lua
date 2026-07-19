@@ -991,22 +991,31 @@ local function toggle_at_cursor()
 end
 
 -- ── the help window (canonical cheatsheet — lists the Phase-10 write keys too) ──
-local function show_help()
-    ui.help({
-        title = "Forge review keymaps",
-        items = {
-            { "]t / [t", "next / previous review thread (all files)" },
+--- The review keymap cheatsheet. In the no-lvim-git FALLBACK there is no diff buffer, so the diff-only keys
+--- (per-line comment `cc`, thread expand, file/hunk navigation) are neither bound nor listed — cr/cx/cs there
+--- act on the thread at the `]t` index.
+---@param fallback? boolean
+local function show_help(fallback)
+    local items = { { "]t / [t", "next / previous review thread (all files)" } }
+    if not fallback then
+        vim.list_extend(items, {
             { "<Tab> / za / <CR>", "expand / collapse the thread on this line" },
             { "]f / [f", "next / previous file (diff)" },
             { "]c / [c", "next / previous hunk (diff)" },
             { "cc", "new comment on this line (visual: a range comment)" },
-            { "cr", "reply to the thread on this line" },
-            { "cx", "resolve / unresolve the thread" },
-            { "cs", "submit review (approve / request changes / comment)" },
-            { "?", "dispatch (all commands)" },
-            { "g?", "this help" },
-            { "q / <Esc>", "close the review workspace" },
-        },
+        })
+    end
+    vim.list_extend(items, {
+        { "cr", "reply to the thread on this line" },
+        { "cx", "resolve / unresolve the thread" },
+        { "cs", "submit review (approve / request changes / comment)" },
+        { "?", "dispatch (all commands)" },
+        { "g?", "this help" },
+        { "q / <Esc>", "close the review workspace" },
+    })
+    ui.help({
+        title = "Forge review keymaps",
+        items = items,
         close_keys = { "q", "<Esc>" },
     })
 end
@@ -1143,7 +1152,8 @@ function M._open_diff(topic)
     S.range = ("%s/%s...%s"):format(S.remote, pr.base_ref, stable)
     local diff = S.diff
     notify("fetching #" .. S.number .. " head for review …")
-    git.fetch_ref(S.root, S.remote, ("pull/%d/head:%s"):format(S.number, stable), function(fok, ferr)
+    local head_ref = actions.pull_head_ref(S.repo_row.forge, S.number) .. ":" .. stable
+    git.fetch_ref(S.root, S.remote, head_ref, function(fok, ferr)
         if not fok then
             notify("fetch of the pull head failed: " .. (ferr or "?"), vim.log.levels.WARN)
             teardown()
@@ -1341,12 +1351,17 @@ local function open_fallback(topic)
                         jump_thread(-1)
                     end,
                 },
-                { key = "cc", run = do_cc },
+                -- no diff buffer in the fallback → `cc` (per-line comment) can never resolve a target; omit it.
                 { key = "cr", run = do_cr },
                 { key = "cx", run = do_cx },
                 { key = "cs", run = do_cs },
                 { key = "?", run = open_dispatch },
-                { key = "g?", run = show_help },
+                {
+                    key = "g?",
+                    run = function()
+                        show_help(true)
+                    end,
+                },
             },
             callback = function()
                 if is_tab then
@@ -1404,7 +1419,8 @@ local function open_fallback(topic)
     if S.root and pr and pr.base_ref then
         local stable = ("refs/forge/pr/%d"):format(S.number)
         local range = ("%s/%s...%s"):format(S.remote, pr.base_ref, stable)
-        git.fetch_ref(S.root, S.remote, ("pull/%d/head:%s"):format(S.number, stable), function(fok)
+        local head_ref = actions.pull_head_ref(S.repo_row.forge, S.number) .. ":" .. stable
+        git.fetch_ref(S.root, S.remote, head_ref, function(fok)
             if not S then
                 return
             end

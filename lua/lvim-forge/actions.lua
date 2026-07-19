@@ -853,10 +853,12 @@ end
 --- The remote-side refspec for a forge's PR head — the backend owns the forge-specific pattern (GitHub /
 --- Gitea `pull/<n>/head`, GitLab `merge-requests/<n>/head`), so this is a dispatch, not a `forge ==`
 --- branch. Falls back to the GitHub-style pattern for a backend that does not override it.
+--- Exported so the review workspace + topic-buffer diff paths fetch the CORRECT PR-head refspec per forge
+--- (a hardcoded `pull/<n>/head` breaks GitLab MRs, which serve `merge-requests/<n>/head`).
 ---@param forge string
 ---@param number integer
 ---@return string
-local function pull_head_ref(forge, number)
+function M.pull_head_ref(forge, number)
     local b = client.backend(forge)
     if b and type(b.pull_head_refspec) == "function" then
         return b.pull_head_refspec(number)
@@ -927,7 +929,7 @@ local function do_checkout(git_root, remote, repo_row, number, pr, opts, cb)
     local co = config.checkout or {}
     local head_ref = pr.head_ref
     local stable = ("refs/forge/pr/%d"):format(number)
-    local refspec = pull_head_ref(repo_row.forge, number) .. ":" .. stable
+    local refspec = M.pull_head_ref(repo_row.forge, number) .. ":" .. stable
     git.fetch_ref(git_root, remote, refspec, function(fok, ferr)
         if not fok then
             return fail(cb, "fetch", "fetch of the pull request head failed: " .. (ferr or "?"))

@@ -13,9 +13,8 @@
 --   • `issue`   — create an issue: a TITLE input block (row 1) + a body block. A repo template pick would
 --                 slot in here via `ui.select` — but no templates table is cached yet, so the pick is
 --                 SKIPPED (an OPEN follow-up: fetch `.github/ISSUE_TEMPLATE` into a templates table).
---   • `pr`      — create a pull request. The SHAPE exists (title + body); the base/head ref pickers and
---                 the create-PR endpoint are PHASE 7, so submit here notifies cleanly. This is the
---                 documented Phase-7 seam, not a stub verb.
+--   • `pr`      — create a pull request (title + body); submit routes to the create-PR endpoint like the
+--                 other verbs (base/head ref pickers are the remaining OPEN enhancement).
 --
 -- Submit routes to the right verb in `actions.lua` → `sync.mutate` (NO optimistic write: the API
 -- response is the truth) → on success the composer closes, the response upserts, `LvimForgeTopicChanged`

@@ -101,7 +101,7 @@ local function notify(msg, level)
     vim.notify("lvim-forge: " .. msg, level or vim.log.levels.INFO)
 end
 
--- ── repo tracking (Phase 2 — DB registration only; the network pull lands with the sync engine) ──
+-- ── repo tracking (register/track the repo in the DB; `:LvimForge pull` then syncs it over the network) ──
 
 --- Resolve the repo the `add` verb should track: no positional spec → the current repo (detect);
 --- an `owner/name` spec → the current repo's host/forge with the owner/name overridden; a bare
@@ -168,7 +168,7 @@ local function do_add(p)
     end
     db.set_tracked(repo_id, tracked)
     notify(
-        ("%s %s/%s on %s (tracked = %s) — run `:LvimForge pull` once the sync engine lands"):format(
+        ("%s %s/%s on %s (tracked = %s) — run `:LvimForge pull` to sync it"):format(
             existed and "updated" or "tracked",
             repo.owner,
             repo.name,

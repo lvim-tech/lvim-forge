@@ -210,9 +210,20 @@ function M.attach(buf, repo_id)
     M._ctx[buf] = { repo_id = repo_id }
     vim.bo[buf].omnifunc = "v:lua.require'lvim-forge.refs'.omnifunc"
     pcall(vim.keymap.set, "i", "<C-Space>", "<C-x><C-o>", { buffer = buf, desc = "forge: complete @/#" })
+    -- `_ctx` is keyed by bufnr and does NOT drop on wipe on its own — the gitcommit attach never calls
+    -- detach, so a wiped buffer would leave a stale repo_id that a REUSED bufnr (in a different, untracked
+    -- repo) then offers as completions. Drop the entry when the buffer is wiped.
+    pcall(api.nvim_create_autocmd, "BufWipeout", {
+        buffer = buf,
+        once = true,
+        callback = function()
+            M.detach(buf)
+        end,
+    })
 end
 
---- Drop a buffer's completion context (the composer calls this on close; wiped-out buffers drop naturally).
+--- Drop a buffer's completion context (the composer calls this on close; the attach BufWipeout autocmd also
+--- calls it when the buffer is wiped).
 ---@param buf? integer
 function M.detach(buf)
     if buf then

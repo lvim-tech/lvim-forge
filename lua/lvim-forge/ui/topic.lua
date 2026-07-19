@@ -1170,16 +1170,17 @@ function M.open(root, number, opts)
             return
         end
         local detected = require("lvim-forge.client").detect(root)
-        local git_root = detected and detected.root
-        if not git_root then
+        if not (detected and detected.root) then
             notify("not inside a git working tree", vim.log.levels.WARN)
             return
         end
-        local remote = (detected and detected.remote) or "origin"
+        local git_root = detected.root
+        local remote = detected.remote or "origin"
         local git = require("lvim-forge.git")
         local stable = ("refs/forge/pr/%d"):format(number)
         notify("fetching #" .. number .. " head for the diff …")
-        git.fetch_ref(git_root, remote, ("pull/%d/head:%s"):format(number, stable), function(fok, ferr)
+        local head_ref = actions.pull_head_ref(detected.forge, number) .. ":" .. stable
+        git.fetch_ref(git_root, remote, head_ref, function(fok, ferr)
             if not fok then
                 notify("fetch of the pull head failed: " .. (ferr or "?"), vim.log.levels.WARN)
                 return
@@ -1834,16 +1835,17 @@ function M._diff_file(root, m, f)
         return
     end
     local detected = require("lvim-forge.client").detect(root)
-    local git_root = detected and detected.root
-    if not git_root then
+    if not (detected and detected.root) then
         pcall(diff.open, { paths = { path } })
         return
     end
-    local remote = (detected and detected.remote) or "origin"
+    local git_root = detected.root
+    local remote = detected.remote or "origin"
     local git = require("lvim-forge.git")
     local stable = ("refs/forge/pr/%d"):format(number)
     -- Fetch the PR head, then diff the file over base...head; a failed fetch falls back to the working diff.
-    git.fetch_ref(git_root, remote, ("pull/%d/head:%s"):format(number, stable), function(fok)
+    local head_ref = actions.pull_head_ref(detected.forge, number) .. ":" .. stable
+    git.fetch_ref(git_root, remote, head_ref, function(fok)
         if fok then
             local range = ("%s/%s...%s"):format(remote, pr.base_ref, stable)
             pcall(diff.open, { range = range, paths = { path } })
