@@ -64,26 +64,36 @@ local function ensure_viewer(repo, detect)
     if not backend or type(backend.viewer) ~= "function" then
         return
     end
+    -- Claim the probe SYNCHRONOUSLY so a burst of rebuilds only ever schedules it once...
     viewer_inflight[host] = true
-    local dt = require("lvim-forge.client.detect")
-    backend.viewer({
-        owner = repo.owner,
-        name = repo.name,
-        forge = repo.forge,
-        host = host,
-        base = dt.api_base(repo.forge, host),
-        root = detect.root,
-    }, function(login)
-        viewer_inflight[host] = nil
-        if not login then
-            return
-        end
-        state.viewer[host] = login
-        vim.schedule(function()
-            local ok2, st = pcall(require, "lvim-git.ui.status")
-            if ok2 and type(st.is_open) == "function" and st.is_open() and type(st.refresh) == "function" then
-                pcall(st.refresh)
-            end
+    -- ...but run it OFF the render path. `rows()` is called while the lvim-git status panel is PAINTING, and
+    -- resolving a transport asks `auth.cli_authed`, whose FIRST call is a blocking CLI `auth status`
+    -- (measured ~700 ms for `gh`) — running that inline stalled the whole panel behind this fire-and-forget
+    -- probe. Deferring a tick, and warming the CLI-auth cache asynchronously before touching the transport,
+    -- honours what this probe already documents about itself: never on the render path.
+    vim.schedule(function()
+        require("lvim-forge.client.auth").prewarm_cli(repo.forge, function()
+            local dt = require("lvim-forge.client.detect")
+            backend.viewer({
+                owner = repo.owner,
+                name = repo.name,
+                forge = repo.forge,
+                host = host,
+                base = dt.api_base(repo.forge, host),
+                root = detect.root,
+            }, function(login)
+                viewer_inflight[host] = nil
+                if not login then
+                    return
+                end
+                state.viewer[host] = login
+                vim.schedule(function()
+                    local ok2, st = pcall(require, "lvim-git.ui.status")
+                    if ok2 and type(st.is_open) == "function" and st.is_open() and type(st.refresh) == "function" then
+                        pcall(st.refresh)
+                    end
+                end)
+            end)
         end)
     end)
 end

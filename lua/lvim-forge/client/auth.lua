@@ -58,6 +58,33 @@ function M.cli_authed(forge)
     return authed
 end
 
+--- Warm the `cli_authed` cache ASYNCHRONOUSLY, then call `cb`. `cli_authed` otherwise runs a BLOCKING
+--- `auth status` the first time it is asked — measured ~700 ms for `gh` (CLI start-up plus its own network
+--- check) — and the first thing that asks is the transport resolve behind a viewer probe, which the status
+--- section triggers while the panel is PAINTING. Warming it off the render path keeps that cost off the main
+--- loop entirely. Returns immediately (calling `cb`) once the cache holds a value, or when the forge has no
+--- CLI / it is not installed.
+---@param forge string
+---@param cb fun()
+function M.prewarm_cli(forge, cb)
+    if state.cli_auth[forge] ~= nil then
+        cb()
+        return
+    end
+    local cli = CLI[forge]
+    if not (cli and vim.fn.executable(cli) == 1) then
+        state.cli_auth[forge] = false
+        cb()
+        return
+    end
+    runner.run(CLI_STATUS[cli], { timeout = 4000 }, function(res)
+        if state.cli_auth[forge] == nil then
+            state.cli_auth[forge] = res ~= nil and res.code == 0
+        end
+        cb()
+    end)
+end
+
 --- Read `~/.netrc` for the password of `machine <host>`. Best-effort line parser (handles the one-line
 --- `machine h login l password p` form and the multi-token spread form). Returns nil on any miss.
 ---@param host string
