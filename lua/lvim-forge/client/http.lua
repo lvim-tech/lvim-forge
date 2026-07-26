@@ -24,7 +24,7 @@
 
 local runner = require("lvim-forge.client.runner")
 
-local uv = vim.uv or vim.loop
+local uv = vim.uv
 
 local M = {}
 
