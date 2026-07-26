@@ -41,6 +41,7 @@ local detect = require("lvim-forge.client.detect")
 local workspace = require("lvim-forge.ui.workspace")
 local ui = require("lvim-ui")
 local hl = require("lvim-utils.highlight")
+local util = require("lvim-forge.util")
 
 local M = {}
 
@@ -54,9 +55,6 @@ local M = {}
 ---@param opts? { cb?: fun(ok: boolean, err: table?), action_opts?: table }
 function M.toggle_state(root, number, cur_state, opts)
     opts = opts or {}
-    local config = require("lvim-forge.config")
-    local actions = require("lvim-forge.actions")
-    local ui = require("lvim-ui")
     local new_state
     if cur_state == "open" then
         new_state = "closed"
@@ -132,63 +130,6 @@ end
 
 -- ── time helpers (UTC ISO-8601 → epoch / a short relative date) ────────────────
 
---- Epoch seconds of a UTC ISO-8601 string (its fields are UTC; correct `os.time`'s local interpretation
---- by the machine's UTC offset). nil when unparseable.
----@param iso? string
----@return integer?
-local function iso_epoch(iso)
-    if type(iso) ~= "string" then
-        return nil
-    end
-    local Y, Mo, D, h, m, s = iso:match("(%d+)-(%d+)-(%d+)[T ](%d+):(%d+):(%d+)")
-    if not Y then
-        return nil
-    end
-    local as_local = os.time({
-        year = tonumber(Y) or 1970,
-        month = tonumber(Mo) or 1,
-        day = tonumber(D) or 1,
-        hour = tonumber(h) or 0,
-        min = tonumber(m) or 0,
-        sec = tonumber(s) or 0,
-    })
-    if not as_local then
-        return nil
-    end
-    local offset = os.time(os.date("!*t") --[[@as osdateparam]]) - os.time()
-    return as_local - offset
-end
-
---- A short relative date ("3h", "2d", "5mo", "1y") from a UTC ISO-8601 timestamp (the dim row meta).
----@param iso? string
----@return string
-local function rel_date(iso)
-    local t = iso_epoch(iso)
-    if not t then
-        return ""
-    end
-    local d = os.time() - t
-    if d < 60 then
-        return d .. "s"
-    elseif d < 3600 then
-        return math.floor(d / 60) .. "m"
-    elseif d < 86400 then
-        return math.floor(d / 3600) .. "h"
-    elseif d < 86400 * 30 then
-        return math.floor(d / 86400) .. "d"
-    elseif d < 86400 * 365 then
-        return math.floor(d / (86400 * 30)) .. "mo"
-    end
-    return math.floor(d / (86400 * 365)) .. "y"
-end
-
---- Truthy for a sqlite boolean column (1 / true).
----@param v any
----@return boolean
-local function truthy(v)
-    return v == 1 or v == true
-end
-
 -- ── state chip + PR file status glyphs ─────────────────────────────────────────
 
 --- The state word + its chip highlight (icon + block) for a topic.
@@ -203,7 +144,7 @@ local function state_chip(topic, is_pr, pr)
             return icons.merged, "Merged", "LvimForgeChipMerged"
         elseif topic.state == "closed" then
             return icons.closed, "Closed", "LvimForgeChipClosed"
-        elseif pr and truthy(pr.draft) then
+        elseif pr and util.truthy(pr.draft) then
             return icons.draft, "Draft", "LvimForgeChipDraft"
         end
         return icons.pull, "Open", "LvimForgeChipOpen"
@@ -376,7 +317,9 @@ end
 --- threaded through); nil detects from the current buffer (the `:LvimForge topic <n>` path).
 ---@param root? string|integer
 ---@param number integer|string
----@param opts? { layout?: string, kind?: "issue"|"pullreq" }
+---@param opts? { layout?: string, kind?: "issue"|"pullreq", from_list?: boolean }
+---   `from_list` marks the drill-in from the topic LIST (the Magit `RET` path): closing this buffer then
+---   REOPENS the list with its cursor aimed back at this topic, instead of dropping to the code beneath.
 function M.open(root, number, opts)
     opts = opts or {}
     register_merge_transient() -- idempotent; ensures the merge popup def exists (config is merged by now)
@@ -691,7 +634,7 @@ function M.open(root, number, opts)
     ---@param iso? string
     ---@return table
     local function system_row(name, glyph, text, iso, group)
-        local rel = rel_date(iso)
+        local rel = util.rel_date(iso)
         local label = text .. (rel ~= "" and ("  " .. GLYPH.arrow .. " " .. rel) or "")
         -- A STATE event carries its own semantic colour (the same hues the state chip/band use: opened green ·
         -- closed red · merged magenta), so the timeline's turning points read at a glance. Everything else
@@ -717,7 +660,7 @@ function M.open(root, number, opts)
     ---@param m table  the topic model (its `topic.author` is the pinned owner colour)
     ---@return table
     local function comment_section(p, m)
-        local label = (p.author or "?") .. "  " .. GLYPH.arrow .. " " .. rel_date(p.created)
+        local label = (p.author or "?") .. "  " .. GLYPH.arrow .. " " .. util.rel_date(p.created)
         return section(
             "cmt:" .. tostring(p.id),
             label,
@@ -749,7 +692,7 @@ function M.open(root, number, opts)
             GLYPH.arrow,
             v.word,
             GLYPH.arrow,
-            rel_date(rv.submitted_at)
+            util.rel_date(rv.submitted_at)
         )
         local name = "rev:" .. tostring(rv.id)
         local children = {}
@@ -760,7 +703,7 @@ function M.open(root, number, opts)
         for _, p in ipairs(m.posts) do
             if p.kind == "review-comment" and rv.forge_id ~= nil and p.review_id == rv.forge_id then
                 local anchor = (p.path or "?") .. (p.line and (":" .. p.line) or "")
-                if truthy(p.outdated) then
+                if util.truthy(p.outdated) then
                     anchor = anchor .. "  (outdated)"
                 end
                 children[#children + 1] = {
@@ -771,7 +714,7 @@ function M.open(root, number, opts)
                     icon = " " .. GLYPH.arrow .. " ",
                     icon_hl = "LvimForgeThread",
                     label = anchor,
-                    text_hl = truthy(p.outdated) and "LvimForgeThreadOutdated" or "LvimForgeBranch",
+                    text_hl = util.truthy(p.outdated) and "LvimForgeThreadOutdated" or "LvimForgeBranch",
                     run = function() end,
                 }
                 vim.list_extend(children, body_rows(name .. ":c" .. tostring(p.id) .. ":", p.body))
@@ -787,10 +730,18 @@ function M.open(root, number, opts)
     ---@param m table
     ---@return table[]
     local function timeline_rows(m)
-        ---@type { e: integer, i: integer, row: table }[]
+        ---@type { e: number, i: integer, row: table }[]
         local entries = {}
-        local function add(iso, row)
-            entries[#entries + 1] = { e = iso_epoch(iso) or 0, i = #entries, row = row }
+        --- Add a timeline entry at `iso`. `fallback` decides where an entry with a MISSING or unparseable
+        --- timestamp lands: the opening event belongs first (0), a terminal event (closed / merged) belongs
+        --- LAST (+inf) — it is by definition the newest thing that happened. Falling back to 0 for both put
+        --- "closed this issue" above "opened this issue" whenever the forge did not give us a `closed_at`
+        --- (the column is nullable — `model.to_iso` returns nil for a missing or non-string value).
+        ---@param iso? string
+        ---@param row table
+        ---@param fallback? number  the sort key when `iso` is missing/unparseable (default 0)
+        local function add(iso, row, fallback)
+            entries[#entries + 1] = { e = util.iso_epoch(iso) or fallback or 0, i = #entries, row = row }
         end
         add(
             m.topic.created,
@@ -824,7 +775,8 @@ function M.open(root, number, opts)
                     "merged" .. (by and (" by " .. by) or ""),
                     m.topic.closed_at,
                     "LvimForgeMerged"
-                )
+                ),
+                math.huge
             )
         elseif m.topic.state == "closed" then
             add(
@@ -835,7 +787,8 @@ function M.open(root, number, opts)
                     "closed this " .. (m.is_pr and "pull request" or "issue"),
                     m.topic.closed_at,
                     "LvimForgeClosed"
-                )
+                ),
+                math.huge
             )
         end
         table.sort(entries, function(a, b)
@@ -935,7 +888,7 @@ function M.open(root, number, opts)
         local children = {}
         local unresolved = 0
         for _, th in ipairs(m.threads) do
-            local resolved = truthy(th.resolved)
+            local resolved = util.truthy(th.resolved)
             if not resolved then
                 unresolved = unresolved + 1
             end
@@ -944,7 +897,7 @@ function M.open(root, number, opts)
             if resolved then
                 anchor = anchor .. "  (resolved)"
             end
-            if truthy(th.outdated) then
+            if util.truthy(th.outdated) then
                 anchor = anchor .. "  (outdated)"
             end
             local tchildren = {}
@@ -952,7 +905,7 @@ function M.open(root, number, opts)
                 if p.kind == "review-comment" and th.forge_id ~= nil and p.thread_id == th.forge_id then
                     tchildren[#tchildren + 1] = leaf(
                         tname .. ":h" .. tostring(p.id),
-                        (p.author or "?") .. "  " .. GLYPH.arrow .. " " .. rel_date(p.created),
+                        (p.author or "?") .. "  " .. GLYPH.arrow .. " " .. util.rel_date(p.created),
                         "LvimForgeAuthor"
                     )
                     vim.list_extend(tchildren, body_rows(tname .. ":c" .. tostring(p.id) .. ":", p.body))
@@ -1000,7 +953,7 @@ function M.open(root, number, opts)
         -- The description is the topic AUTHOR's opening post, so its band reads exactly like every comment's
         -- (`author ➤ rel-date`, in that participant's own accent) instead of being the one band labelled by
         -- ROLE. The timeline's `opened this issue` event already says what it is.
-        local desc_label = (m.topic.author or "?") .. "  " .. GLYPH.arrow .. " " .. rel_date(m.topic.created)
+        local desc_label = (m.topic.author or "?") .. "  " .. GLYPH.arrow .. " " .. util.rel_date(m.topic.created)
         local desc_accent = highlights.author_accent(m.topic.author, m.topic.author, state.viewer[repo_row.host])
         rows[#rows + 1] = section("desc", desc_label, desc_accent, nil, body_rows("desc:", m.topic.body), true, true)
         vim.list_extend(rows, timeline_rows(m))
@@ -1079,12 +1032,14 @@ function M.open(root, number, opts)
         -- Prefer the stored html_url and hand it to the OS handler (what lvim-git's browse does
         -- internally). lvim-git.browse builds URLs from the git remote, not an arbitrary topic URL, so the
         -- cached html_url is the correct source here; degrade to a yank when there is no opener.
-        local ok = pcall(vim.ui.open, url)
-        if ok then
+        -- Through the shared opener: `vim.ui.open` reports "no handler" by RETURNING `nil, err` rather
+        -- than raising, so a bare `pcall` status can never see the failure (see lvim-utils.utils.open_url).
+        local opened, why = require("lvim-utils.utils").open_url(url)
+        if opened then
             notify("browse: " .. url)
         else
             pcall(vim.fn.setreg, "+", url)
-            notify("browse (no opener; yanked): " .. url, vim.log.levels.WARN)
+            notify(("browse (%s; yanked): %s"):format(why or "?", url), vim.log.levels.WARN)
         end
     end
 
@@ -1238,7 +1193,7 @@ function M.open(root, number, opts)
             notify("only an open pull request can toggle its draft state")
             return
         end
-        local want = not truthy(m.pr and m.pr.draft)
+        local want = not util.truthy(m.pr and m.pr.draft)
         notify((want and "converting #%d to draft …" or "marking #%d ready for review …"):format(number))
         actions.toggle_draft(root, number, function(ok, res)
             if not ok then
@@ -1647,7 +1602,7 @@ function M.open(root, number, opts)
             { text = GLYPH.repo .. " " .. ("%s/%s"):format(r.owner, r.name), accent = "green" },
             { text = r.host, accent = "teal" },
         }
-        local pulled = rel_date(r.pulled_at)
+        local pulled = util.rel_date(r.pulled_at)
         if pulled ~= "" then
             parts[#parts + 1] = { text = "pulled " .. pulled, accent = "purple" }
         end
