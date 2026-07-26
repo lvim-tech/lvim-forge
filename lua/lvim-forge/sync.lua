@@ -32,7 +32,7 @@
 --
 ---@module "lvim-forge.sync"
 
-local uv = vim.uv or vim.loop
+local uv = vim.uv
 local config = require("lvim-forge.config")
 local state = require("lvim-forge.state")
 local db = require("lvim-forge.db")
@@ -897,6 +897,16 @@ function M.setup_poll()
         return
     end
     poll_timer = uv.new_timer()
+    -- Release it on exit. `M.stop_poll` existed but nothing ever called it, so the timer lived to the
+    -- end of the process: an un-closed uv handle, and — worse — a scheduled poll could still fire
+    -- network work while Neovim was tearing down. Registered once, next to the only thing that starts it.
+    vim.api.nvim_create_autocmd("VimLeavePre", {
+        group = vim.api.nvim_create_augroup("LvimForgeSyncPoll", { clear = true }),
+        desc = "lvim-forge: release the notifications poll timer",
+        callback = function()
+            M.stop_poll()
+        end,
+    })
     local interval = math.max(1, (n.interval or 300)) * 1000
     poll_timer:start(interval, interval, function()
         vim.schedule(function()
