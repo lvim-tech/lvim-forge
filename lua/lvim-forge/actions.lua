@@ -28,6 +28,7 @@ local config = require("lvim-forge.config")
 local state = require("lvim-forge.state")
 local client = require("lvim-forge.client")
 local detect = require("lvim-forge.client.detect")
+local util = require("lvim-forge.util")
 
 local M = {}
 
@@ -600,13 +601,6 @@ end
 
 -- ── merge (PR) + draft toggle ────────────────────────────────────────────────────
 
---- Coerce a stored boolean-ish flag (0/1 INTEGER, or a real bool) to a Lua boolean.
----@param v any
----@return boolean
-local function truthy(v)
-    return v == true or v == 1 or v == "1"
-end
-
 --- Re-sync lvim-git after a merge (the clean seam — never forge its event) and settle the merge callback.
 ---@param root? string|integer
 ---@param git_root? string
@@ -708,7 +702,7 @@ function M.merge(root, number, params, cb, opts)
     })
     -- The merge response is `{ sha, merged, message }` (no full topic) → reconcile the cached state.
     spec.apply = function(rr, body)
-        if type(body) == "table" and truthy(body.merged) then
+        if type(body) == "table" and util.truthy(body.merged) then
             local t = db.get_topic(rr.id, number, "pullreq")
             if t then
                 db.set_topic_state(t.id, "merged")
@@ -800,7 +794,7 @@ function M.toggle_draft(root, number, cb, opts)
         return fail(cb, "no_pr", "pull request #" .. tostring(number) .. " is not cached")
     end
     ctx.kind, ctx.number = "pullreq", number
-    local want_draft = not truthy(topic.pullreq.draft)
+    local want_draft = not util.truthy(topic.pullreq.draft)
 
     -- The backend PREPARES the draft-toggle spec (async): GitHub fetches the PR node id then a GraphQL
     -- spec; GitLab returns a TITLE-edit PUT (`Draft:` prefix). The action layer is forge-blind.

@@ -29,6 +29,7 @@ local client = require("lvim-forge.client")
 local ui = require("lvim-ui")
 local ui_filters = require("lvim-ui.filters")
 local hl = require("lvim-utils.highlight")
+local util = require("lvim-forge.util")
 
 local M = {}
 
@@ -55,63 +56,7 @@ local function notify(msg, level)
     vim.notify("lvim-forge: " .. msg, level or vim.log.levels.INFO)
 end
 
----@param v any
----@return boolean
-local function truthy(v)
-    return v == 1 or v == true
-end
-
 -- ── time helpers (a UTC ISO-8601 timestamp → a short relative date) ────────────
-
---- Epoch seconds of a UTC ISO-8601 string (its fields are UTC; correct `os.time`'s local interpretation
---- by the machine's UTC offset). nil when unparseable.
----@param iso? string
----@return integer?
-local function iso_epoch(iso)
-    if type(iso) ~= "string" then
-        return nil
-    end
-    local Y, Mo, D, h, m, s = iso:match("(%d+)-(%d+)-(%d+)[T ](%d+):(%d+):(%d+)")
-    if not Y then
-        return nil
-    end
-    local as_local = os.time({
-        year = tonumber(Y) or 1970,
-        month = tonumber(Mo) or 1,
-        day = tonumber(D) or 1,
-        hour = tonumber(h) or 0,
-        min = tonumber(m) or 0,
-        sec = tonumber(s) or 0,
-    })
-    if not as_local then
-        return nil
-    end
-    local offset = os.time(os.date("!*t") --[[@as osdateparam]]) - os.time()
-    return as_local - offset
-end
-
---- A short relative date ("3h", "2d", "5mo", "1y") from a UTC ISO-8601 timestamp (the dim row meta).
----@param iso? string
----@return string
-local function rel_date(iso)
-    local t = iso_epoch(iso)
-    if not t then
-        return ""
-    end
-    local d = os.time() - t
-    if d < 60 then
-        return d .. "s"
-    elseif d < 3600 then
-        return math.floor(d / 60) .. "m"
-    elseif d < 86400 then
-        return math.floor(d / 3600) .. "h"
-    elseif d < 86400 * 30 then
-        return math.floor(d / 86400) .. "d"
-    elseif d < 86400 * 365 then
-        return math.floor(d / (86400 * 30)) .. "mo"
-    end
-    return math.floor(d / (86400 * 365)) .. "y"
-end
 
 -- ── the subject → topic mapping (parsed off the notification's API subject url) ──
 
@@ -318,7 +263,7 @@ function M.open(opts)
     ---@param n table  a notifications row
     ---@return table
     local function note_row(name, n)
-        local unread = truthy(n.unread)
+        local unread = util.truthy(n.unread)
         st.registry[name] = {
             id = n.id,
             repo_id = n.repo_id,
@@ -351,7 +296,7 @@ function M.open(opts)
             seg(" ")
         end
         seg(n.title or "(no title)", unread and "LvimForgeNotifTitle" or "LvimForgeNotifRead")
-        local rel = rel_date(n.updated)
+        local rel = util.rel_date(n.updated)
         if rel ~= "" then
             seg("  " .. GLYPH.arrow .. " ", "LvimForgeNotifDate")
             seg(rel, "LvimForgeNotifDate")

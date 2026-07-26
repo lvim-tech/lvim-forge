@@ -28,6 +28,7 @@ local detect = require("lvim-forge.client.detect")
 local workspace = require("lvim-forge.ui.workspace")
 local ui = require("lvim-ui")
 local ui_filters = require("lvim-ui.filters")
+local util = require("lvim-forge.util")
 
 local M = {}
 
@@ -49,56 +50,6 @@ local function notify(msg, level)
 end
 
 -- ── time helpers ─────────────────────────────────────────────────────────────
-
---- Epoch seconds of a UTC ISO-8601 string (its fields are UTC; correct `os.time`'s local interpretation
---- by the machine's UTC offset). nil when unparseable.
----@param iso? string
----@return integer?
-local function iso_epoch(iso)
-    if type(iso) ~= "string" then
-        return nil
-    end
-    local Y, Mo, D, h, m, s = iso:match("(%d+)-(%d+)-(%d+)[T ](%d+):(%d+):(%d+)")
-    if not Y then
-        return nil
-    end
-    local as_local = os.time({
-        year = tonumber(Y) or 1970,
-        month = tonumber(Mo) or 1,
-        day = tonumber(D) or 1,
-        hour = tonumber(h) or 0,
-        min = tonumber(m) or 0,
-        sec = tonumber(s) or 0,
-    })
-    if not as_local then
-        return nil
-    end
-    local offset = os.time(os.date("!*t") --[[@as osdateparam]]) - os.time()
-    return as_local - offset
-end
-
---- A short relative date ("3h", "2d", "5mo", "1y") from a UTC ISO-8601 timestamp (the dim row meta).
----@param iso? string
----@return string
-local function rel_date(iso)
-    local t = iso_epoch(iso)
-    if not t then
-        return ""
-    end
-    local d = os.time() - t
-    if d < 60 then
-        return d .. "s"
-    elseif d < 3600 then
-        return math.floor(d / 60) .. "m"
-    elseif d < 86400 then
-        return math.floor(d / 3600) .. "h"
-    elseif d < 86400 * 30 then
-        return math.floor(d / 86400) .. "d"
-    elseif d < 86400 * 365 then
-        return math.floor(d / (86400 * 30)) .. "mo"
-    end
-    return math.floor(d / (86400 * 365)) .. "y"
-end
 
 -- ── the state icon (open/closed/merged/draft, per kind) ───────────────────────
 
@@ -172,7 +123,9 @@ end
 -- ── the panel (one closure per open) ──────────────────────────────────────────
 
 --- Open the topic list for the current tracked repo.
----@param opts? { layout?: string, kind?: "all"|"issues"|"pulls", root?: string|integer }
+---@param opts? { layout?: string, kind?: "all"|"issues"|"pulls", root?: string|integer, focus_number?: integer }
+---   `focus_number` lands the cursor on that topic's row when it is in the (filtered) list — the drill-out
+---   path uses it (`ui.topic` reopens this list after closing it, so the cursor would otherwise reset).
 function M.open(opts)
     opts = opts or {}
     if not db.available() then
@@ -462,7 +415,7 @@ function M.open(opts)
             seg(" ")
             seg(" " .. (l.name or "") .. " ", highlights.label_hl(l.color))
         end
-        local rel = rel_date(t.updated)
+        local rel = util.rel_date(t.updated)
         seg("  ")
         seg(t.author or "", "LvimForgeAuthor")
         if rel ~= "" then
@@ -647,7 +600,7 @@ function M.open(opts)
             { text = r.host, accent = "teal" },
             { text = r.tracked, accent = "cyan" },
         }
-        local pulled = rel_date(r.pulled_at)
+        local pulled = util.rel_date(r.pulled_at)
         if pulled ~= "" then
             parts[#parts + 1] = { text = "pulled " .. pulled, accent = "purple" }
         end
