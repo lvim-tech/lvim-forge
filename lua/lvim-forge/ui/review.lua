@@ -46,6 +46,7 @@ local composer = require("lvim-forge.ui.composer")
 local transient = require("lvim-forge.transient")
 local workspace = require("lvim-forge.ui.workspace")
 local ui = require("lvim-ui")
+local util = require("lvim-forge.util")
 
 local M = {}
 
@@ -69,61 +70,6 @@ local GLYPH = {
 ---@param level? integer
 local function notify(msg, level)
     vim.notify("lvim-forge: " .. msg, level or vim.log.levels.INFO)
-end
-
---- Truthy for a sqlite boolean column (1 / true).
----@param v any
----@return boolean
-local function truthy(v)
-    return v == 1 or v == true
-end
-
--- ── time helpers (UTC ISO-8601 → a short relative date; mirrors ui/topic.lua) ──
----@param iso? string
----@return integer?
-local function iso_epoch(iso)
-    if type(iso) ~= "string" then
-        return nil
-    end
-    local Y, Mo, D, h, m, s = iso:match("(%d+)-(%d+)-(%d+)[T ](%d+):(%d+):(%d+)")
-    if not Y then
-        return nil
-    end
-    local as_local = os.time({
-        year = tonumber(Y) or 1970,
-        month = tonumber(Mo) or 1,
-        day = tonumber(D) or 1,
-        hour = tonumber(h) or 0,
-        min = tonumber(m) or 0,
-        sec = tonumber(s) or 0,
-    })
-    if not as_local then
-        return nil
-    end
-    local offset = os.time(os.date("!*t") --[[@as osdateparam]]) - os.time()
-    return as_local - offset
-end
-
----@param iso? string
----@return string
-local function rel_date(iso)
-    local t = iso_epoch(iso)
-    if not t then
-        return ""
-    end
-    local d = os.time() - t
-    if d < 60 then
-        return d .. "s"
-    elseif d < 3600 then
-        return math.floor(d / 60) .. "m"
-    elseif d < 86400 then
-        return math.floor(d / 3600) .. "h"
-    elseif d < 86400 * 30 then
-        return math.floor(d / 86400) .. "d"
-    elseif d < 86400 * 365 then
-        return math.floor(d / (86400 * 30)) .. "mo"
-    end
-    return math.floor(d / (86400 * 365)) .. "y"
 end
 
 --- The first non-empty line of a body (the collapsed one-liner preview).
@@ -157,15 +103,17 @@ local function body_lines(body)
     return out
 end
 
---- Truncate for the collapsed one-liner (byte-safe enough for ASCII/UTF-8 previews).
+--- Truncate for the collapsed one-liner, counting CHARACTERS rather than bytes. A byte cut splits a
+--- multibyte codepoint — a Cyrillic (or any non-ASCII) comment previewed as `Това е ком<broken>…`, and at
+--- barely half the intended length, since every letter costs two bytes.
 ---@param s string
----@param n integer
+---@param n integer  maximum characters, including the ellipsis
 ---@return string
 local function trunc(s, n)
-    if #s <= n then
+    if vim.fn.strchars(s) <= n then
         return s
     end
-    return s:sub(1, n - 1) .. "…"
+    return vim.fn.strcharpart(s, 0, math.max(0, n - 1)) .. "…"
 end
 
 -- ── the overlay MODEL (pure — the headless tests drive these) ──────────────────
@@ -195,8 +143,9 @@ end
 --- Build the ordered anchor list from a PR's threads + posts + reviews. Each THREAD becomes an anchor whose
 --- comments are the review-comment posts linked by `thread_id == thread.forge_id`; a PENDING review's
 --- review-comments that belong to NO thread become their own (pending) anchors so an interrupted review still
---- shows. Resolved threads are dropped unless `show_resolved`. Anchors with no resolvable line are dropped
---- (they cannot be placed). The result is sorted file → line → id (the `]t`/`[t` order).
+--- shows. Resolved threads are dropped unless `show_resolved`. A thread row's `path`/`line` are both
+--- nullable, so each is recovered from the thread's own comments when missing; an anchor that still has no
+--- path or line is dropped (it cannot be placed). The result is sorted file → line → id (the `]t`/`[t` order).
 ---@param model { threads: table[], posts: table[], reviews: table[], show_resolved?: boolean }
 ---@return LvimForgeReviewAnchor[]
 function M.build_anchors(model)
@@ -225,10 +174,15 @@ function M.build_anchors(model)
     local in_thread = {} ---@type table<any, boolean>  posts already shown under a thread (by forge_id)
 
     for _, th in ipairs(threads) do
-        local resolved = truthy(th.resolved)
+        local resolved = util.truthy(th.resolved)
         if show_resolved or not resolved then
             local comments = {}
+            -- BOTH `threads.path` and `threads.line` are nullable, and a thread whose own row carries
+            -- neither still has comments that do. `line` was already recovered from the first comment that
+            -- has one; `path` must be too — anchoring it at "?" produced an anchor that can never match a
+            -- diff buffer, so the thread silently vanished from the overlay instead of rendering.
             local line = th.line
+            local path = th.path
             for _, p in ipairs(posts) do
                 if p.kind == "review-comment" and th.forge_id ~= nil and p.thread_id == th.forge_id then
                     comments[#comments + 1] = { author = p.author, created = p.created, body = p.body }
@@ -236,19 +190,20 @@ function M.build_anchors(model)
                         in_thread[p.forge_id] = true
                     end
                     line = line or p.line
+                    path = path or p.path
                 end
             end
-            if line then
+            if line and path then
                 anchors[#anchors + 1] = {
                     id = "th:" .. tostring(th.id),
                     thread_db_id = th.id,
                     thread_forge_id = th.forge_id,
                     node_id = th.node_id,
-                    path = th.path or (comments[1] and "?") or "?",
+                    path = path,
                     line = line,
                     side = M.side_of(th.side),
                     resolved = resolved,
-                    outdated = truthy(th.outdated),
+                    outdated = util.truthy(th.outdated),
                     pending = false,
                     comments = comments,
                     count = #comments,
@@ -273,7 +228,7 @@ function M.build_anchors(model)
                 line = p.line,
                 side = M.side_of(p.side),
                 resolved = false,
-                outdated = truthy(p.outdated),
+                outdated = util.truthy(p.outdated),
                 pending = true,
                 comments = { { author = p.author, created = p.created, body = p.body } },
                 count = 1,
@@ -345,7 +300,7 @@ function M.expanded_virt(a)
         lines[#lines + 1] = {
             { "  " .. GLYPH.pointer .. " ", marker },
             { cmt.author or "?", "LvimForgeReviewAuthor" },
-            { "  ·  " .. rel_date(cmt.created), "LvimForgeReviewDate" },
+            { "  ·  " .. util.rel_date(cmt.created), "LvimForgeReviewDate" },
         }
         for _, bl in ipairs(body_lines(cmt.body)) do
             lines[#lines + 1] = { { "      ", "LvimForgeReviewBody" }, { bl, "LvimForgeReviewBody" } }
@@ -380,6 +335,12 @@ function M.parse_unified(text)
             out[#out + 1] = { text = line, kind = "hunk" }
         elseif line:match("^%+%+%+") or line:match("^%-%-%-") or line:match("^diff ") or line:match("^index ") then
             out[#out + 1] = { text = line, kind = "header" }
+        elseif line:sub(1, 1) == "\\" then
+            -- `\ No newline at end of file` is a MARKER, not content: counting it as a context line
+            -- advanced both sides by one, so every row after it in the hunk anchored one line too low.
+            -- It typically sits between a `-` and a `+` at the end of a file, which is exactly where a
+            -- review comment on the last line would then be misplaced.
+            out[#out + 1] = { text = line, kind = "meta" }
         elseif new_ln then
             local c = line:sub(1, 1)
             if c == "+" then
@@ -593,6 +554,30 @@ local function cursor_target(sline, eline)
     return { path = S.cur.path, line = line, side = side, start_line = start_line }
 end
 
+--- The anchor on the CURRENT cursor line of a diff buffer, or nil.
+---
+--- Side matching is only meaningful in a SPLIT diff, where the base and head buffers are distinct. An
+--- INLINE diff renders both sides in ONE buffer, so `buf ~= buf_base` there is always true and an
+--- old-side thread could never be matched: it rendered (place_overlays puts both sides in the inline
+--- buffer) but `<Tab>` reported "no review thread on this line", and `cr`/`cx` fell through to the
+--- `]t` index anchor — i.e. acted on a DIFFERENT thread than the one under the cursor.
+---@return LvimForgeReviewAnchor?
+local function anchor_under_cursor()
+    if not (S and S.cur) then
+        return nil
+    end
+    local buf = api.nvim_get_current_buf()
+    local row = api.nvim_win_get_cursor(0)[1]
+    local inline = S.cur.mode == "inline"
+    local side = (buf == S.cur.buf_base) and "old" or "new"
+    for _, a in ipairs(S.anchors) do
+        if a.path == S.cur.path and a.line == row and (inline or a.side == side) then
+            return a
+        end
+    end
+    return nil
+end
+
 --- The review thread the verbs act on: the anchor exactly on the cursor line (diff), else the current
 --- `]t`/`[t` index anchor (and always the index anchor in the fallback panel). nil = no threads.
 ---@return LvimForgeReviewAnchor?
@@ -600,14 +585,10 @@ local function current_thread_anchor()
     if not S then
         return nil
     end
-    if S.mode == "diff" and S.cur then
-        local buf = api.nvim_get_current_buf()
-        local row = api.nvim_win_get_cursor(0)[1]
-        local side = (buf == S.cur.buf_base) and "old" or "new"
-        for _, a in ipairs(S.anchors) do
-            if a.path == S.cur.path and a.side == side and a.line == row then
-                return a
-            end
+    if S.mode == "diff" then
+        local a = anchor_under_cursor()
+        if a then
+            return a
         end
     end
     return S.anchors[state.review.index]
@@ -773,14 +754,20 @@ local function submit_action(_, ctx)
     local EVENT = { comment = "COMMENT", approve = "APPROVE", ["request-changes"] = "REQUEST_CHANGES" }
     local event = EVENT[verdict] or "COMMENT"
 
+    --- Submit, then tell the composer whether it may close. `done` is deferred to the RESULT — exactly as
+    --- `cc`/`cr` do — because a failed submit must not throw away the summary the user just wrote: closing
+    --- first means retyping it. `done(false)` keeps the composer open with the text intact.
     ---@param body string
-    local function fire(body)
+    ---@param done fun(ok: boolean)
+    local function fire(body, done)
         actions.submit_review(sel.root, number, { event = event, body = body }, function(ok, res)
             if not ok then
                 notify("submit failed: " .. ((res and (res.message or res.kind)) or "?"), vim.log.levels.WARN)
+                done(false)
                 return
             end
             notify(("review submitted (%s)"):format(verdict))
+            done(true)
         end, { repo_row = sel.repo_row })
     end
 
@@ -801,13 +788,11 @@ local function submit_action(_, ctx)
                             done(false)
                             return
                         end
-                        done(true)
-                        fire(body)
+                        fire(body, done)
                     end,
                 })
             else
-                done(true)
-                fire(body)
+                fire(body, done)
             end
         end,
     })
@@ -823,7 +808,13 @@ local function discard_action(_, ctx)
         return
     end
     local function run()
-        actions.discard_review(sel.root, number, function(_, res)
+        actions.discard_review(sel.root, number, function(ok, res)
+            -- A FAILED discard is not the same as "there was nothing to discard": reporting the latter for
+            -- both told the user their drafts were gone when the request had actually errored.
+            if not ok then
+                notify("discard failed: " .. ((res and (res.message or res.kind)) or "?"), vim.log.levels.WARN)
+                return
+            end
             notify(res and res.discarded and "pending review discarded" or "no pending review to discard")
         end, { repo_row = sel.repo_row })
     end
@@ -977,17 +968,13 @@ local function toggle_at_cursor()
     if not (S and S.cur) then
         return
     end
-    local buf = api.nvim_get_current_buf()
-    local row = api.nvim_win_get_cursor(0)[1]
-    local side = (buf == S.cur.buf_base) and "old" or "new"
-    for _, a in ipairs(S.anchors) do
-        if a.path == S.cur.path and a.side == side and a.line == row then
-            state.review.expanded[a.id] = not (state.review.expanded[a.id] == true)
-            place_overlays(S.cur)
-            return
-        end
+    local a = anchor_under_cursor()
+    if not a then
+        notify("no review thread on this line (use ]t / [t to reach one)")
+        return
     end
-    notify("no review thread on this line (use ]t / [t to reach one)")
+    state.review.expanded[a.id] = not (state.review.expanded[a.id] == true)
+    place_overlays(S.cur)
 end
 
 -- ── the help window (canonical cheatsheet — lists the Phase-10 write keys too) ──
@@ -1212,7 +1199,12 @@ local function fallback_rows(diff_by_path)
     if not S then
         return {}
     end
-    local files = db.pr_files(db.get_topic(S.repo_id, S.number, "pullreq").id)
+    -- `get_topic` returns nil when the row is not cached — every other call site in this file checks it.
+    -- This one is reached again from the fallback's REFRESH autocmd, so a topic that disappears between
+    -- renders (a pull that prunes it, the repo untracked) raised "attempt to index a nil value" inside an
+    -- autocmd callback and left the panel stuck.
+    local topic = db.get_topic(S.repo_id, S.number, "pullreq")
+    local files = topic and db.pr_files(topic.id) or {}
     local descriptors = M.build_unified_model(files, S.anchors, diff_by_path)
 
     ---@param name string
@@ -1240,7 +1232,7 @@ local function fallback_rows(diff_by_path)
         for _, cmt in ipairs(a.comments) do
             children[#children + 1] = leaf(
                 "t" .. a.id .. ":h" .. tostring(#children),
-                (cmt.author or "?") .. "  " .. GLYPH.pointer .. " " .. rel_date(cmt.created),
+                (cmt.author or "?") .. "  " .. GLYPH.pointer .. " " .. util.rel_date(cmt.created),
                 "LvimForgeReviewAuthor"
             )
             for _, bl in ipairs(body_lines(cmt.body)) do
