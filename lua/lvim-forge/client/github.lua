@@ -432,10 +432,13 @@ end
 ---@param ctx LvimForgeGithubCtx
 ---@return table spec
 function M.mark_notifications_read(ctx)
+    -- NO body. An empty Lua table is indistinguishable from an empty array, and `vim.json.encode({})`
+    -- emits `[]` — GitHub answers 500 to that where it expects an object. The endpoint accepts a
+    -- bodyless PUT (verified live: 205 Reset Content), and `last_read_at` is optional, so sending
+    -- nothing is both correct and unambiguous.
     return routed(ctx, {
         method = "PUT",
         path = repo_path(ctx) .. "/notifications",
-        body = {},
     })
 end
 
