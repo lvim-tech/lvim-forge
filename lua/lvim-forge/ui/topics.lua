@@ -78,9 +78,47 @@ end
 -- ── the structured query model (shared by the `/` input, the panel `set_filter`, and the list-filter
 --    transient — the SAME model `query_rows` consumes, so nothing duplicates the filter logic) ──
 
+--- Split a query into tokens on whitespace, but treat a QUOTED run as part of the token it sits in.
+---
+--- A bare whitespace split makes any value containing a space unreachable, and those are the common ones:
+--- GitHub's own `good first issue` label, and almost every milestone title ("v1.0 Release"). Writing
+--- `label:"good first issue"` now yields the single token `label:good first issue`; the quotes are
+--- consumed, so a value never carries them into the LIKE.
+---@param text string
+---@return string[]
+local function query_tokens(text)
+    local out, buf, i = {}, {}, 1
+    while i <= #text do
+        local c = text:sub(i, i)
+        if c:match("%s") then
+            if #buf > 0 then
+                out[#out + 1] = table.concat(buf)
+                buf = {}
+            end
+            i = i + 1
+        elseif c == '"' or c == "'" then
+            local quote, start = c, i + 1
+            i = i + 1
+            while i <= #text and text:sub(i, i) ~= quote do
+                i = i + 1
+            end
+            buf[#buf + 1] = text:sub(start, i - 1)
+            i = i + 1 -- past the closing quote (or past the end for an unterminated one)
+        else
+            buf[#buf + 1] = c
+            i = i + 1
+        end
+    end
+    if #buf > 0 then
+        out[#out + 1] = table.concat(buf)
+    end
+    return out
+end
+
 --- Parse a query string into structured terms: `label:` `author:` `milestone:` `mark:` `#n`, and the
---- remaining bare words as a free-text LIKE. `milestone:` resolves its title to a local id against the
---- given repo (`-1` = no such milestone → no matches). Returns nil for an empty query (clears the filter).
+--- remaining bare words as a free-text LIKE. A value with spaces is quoted (`label:"good first issue"`).
+--- `milestone:` resolves its title to a local id against the given repo (`-1` = no such milestone → no
+--- matches). Returns nil for an empty query (clears the filter).
 ---@param repo_id integer
 ---@param text? string
 ---@return table?
@@ -90,9 +128,9 @@ local function parse_query(repo_id, text)
         return nil
     end
     local q = { raw = text, terms = {} }
-    for tok in text:gmatch("%S+") do
+    for _, tok in ipairs(query_tokens(text)) do
         local num = tok:match("^#(%d+)$")
-        local k, v = tok:match("^(%w+):(.+)$")
+        local k, v = tok:match("^(%w+):(.+)$") -- `v` may contain spaces (a quoted value)
         if num then
             q.number = tonumber(num)
         elseif k == "label" then
@@ -484,7 +522,7 @@ function M.open(opts)
     local function prompt_query()
         ui.input({
             title = { icon = GLYPH.repo, text = "Filter topics" },
-            subtitle = "label:x author:y milestone:z mark:w #123 + free text",
+            subtitle = 'label:x author:y milestone:z mark:w #123 + free text  ·  quote a value with spaces: label:"good first issue"',
             default = sel.query and sel.query.raw or "",
             callback = function(confirmed, value)
                 if not confirmed then
