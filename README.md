@@ -226,7 +226,7 @@ dispatch. `q` / `<Esc>` closes.
 | Key       | Action                            |
 | --------- | --------------------------------- |
 | `<CR>`    | open the topic (marks it read; or fire the focused filter button) |
-| `r` / `R` | toggle read-state / mark all read |
+| `r` / `R` | toggle read-state / mark all read — **locally**: the forge is not told, so anything still unread there returns unread on the next pull |
 | `P`       | pull notifications                |
 
 **Composer** — `<C-c><C-c>` submit, `<C-c><C-k>` / `q` cancel (dirty buffers confirm),

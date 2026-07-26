@@ -394,6 +394,13 @@ function M.open(opts)
     end
 
     -- ── verbs ────────────────────────────────────────────────────────────────
+    -- NOTE — the read state written by these verbs is LOCAL. Nothing pushes it to the forge (no backend
+    -- exposes a mark-notification-read call yet), and `sync.pull_notifications` upserts each row from the
+    -- API, whose `unread` field is authoritative — so a notification that is still unread server-side
+    -- comes back unread on the next pull. Marking read is therefore a local reading aid, not a sync.
+    -- Making it authoritative means a per-forge action (GitHub `PATCH /notifications/threads/{id}` and
+    -- `PUT /notifications`, GitLab todos, Gitea's equivalent) behind a capability gate — a feature, not a
+    -- fix, and recorded as such in the audit log.
     --- `<CR>` — mark the notification read and open its topic. Same-repo topics drill in (the list is a
     --- focus-trapping modal, so close first then open — the topics `_open_topic` model); a cross-repo topic
     --- cannot be opened from here (repos are not path-anchored) → it is marked read + the user is pointed at
@@ -454,7 +461,12 @@ function M.open(opts)
             db.mark_all_notifications_read()
             fire_changed()
             rebuild()
-            notify(("marked %d notification%s read"):format(count, count == 1 and "" or "s"))
+            notify(
+                ("marked %d notification%s read locally (the forge is not told)"):format(
+                    count,
+                    count == 1 and "" or "s"
+                )
+            )
         end
         if config.confirm_destructive and count >= MANY then
             ui.confirm({

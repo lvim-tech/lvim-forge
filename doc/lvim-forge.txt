@@ -188,7 +188,9 @@ Review workspace~
 
 Notifications inbox~
   <CR>           open the topic (marks it read; or fire the focused filter button)
-  r / R          toggle read-state / mark all read
+  r / R          toggle read-state / mark all read. The state is LOCAL: the
+                 forge is not told, so a notification still unread there comes
+                 back unread on the next pull.
   P              pull notifications
 
 Composer~
