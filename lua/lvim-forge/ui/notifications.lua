@@ -26,6 +26,7 @@ local state = require("lvim-forge.state")
 local db = require("lvim-forge.db")
 local sync = require("lvim-forge.sync")
 local client = require("lvim-forge.client")
+local actions = require("lvim-forge.actions")
 local ui = require("lvim-ui")
 local ui_filters = require("lvim-ui.filters")
 local hl = require("lvim-utils.highlight")
@@ -394,13 +395,56 @@ function M.open(opts)
     end
 
     -- ── verbs ────────────────────────────────────────────────────────────────
-    -- NOTE — the read state written by these verbs is LOCAL. Nothing pushes it to the forge (no backend
-    -- exposes a mark-notification-read call yet), and `sync.pull_notifications` upserts each row from the
-    -- API, whose `unread` field is authoritative — so a notification that is still unread server-side
-    -- comes back unread on the next pull. Marking read is therefore a local reading aid, not a sync.
-    -- Making it authoritative means a per-forge action (GitHub `PATCH /notifications/threads/{id}` and
-    -- `PUT /notifications`, GitLab todos, Gitea's equivalent) behind a capability gate — a feature, not a
-    -- fix, and recorded as such in the audit log.
+    -- READ STATE GOES TO THE FORGE. `sync.pull_notifications` upserts each row from the API, where
+    -- `unread` is authoritative, so a purely local write un-did itself on the next pull. These verbs
+    -- therefore call `actions.mark_notification_read` / `mark_notifications_read`, which write the cache
+    -- only AFTER the forge accepts — a failed request leaves the inbox showing the truth.
+    --
+    -- Marking UNREAD stays local by necessity: GitHub cannot un-read a thread through its API and GitLab
+    -- cannot un-do a todo, so there is nothing to push. The verb says so rather than implying a sync.
+    --
+    -- A notification's OWN repository is passed as `repo_row` (the inbox spans every tracked repo, so the
+    -- buffer's context repo is the wrong target for a cross-repo row).
+
+    --- Action opts targeting the notification's own repository.
+    ---@param rec table  a registry entry
+    ---@return table
+    local function note_opts(rec)
+        return { repo_row = db.repository(rec.repo_id) }
+    end
+
+    --- Can this notification's forge accept a read-state push?
+    ---@param rec table
+    ---@return boolean
+    local function can_mark(rec)
+        local r = db.repository(rec.repo_id)
+        return r ~= nil and client.caps(r.forge).notifications_mark == true
+    end
+
+    --- Mark `rec` read — through the forge when it supports it, else locally with a clear message.
+    ---@param rec table
+    ---@param after? fun()
+    ---@return nil
+    local function mark_read(rec, after)
+        if not can_mark(rec) then
+            db.set_notification_unread(rec.id, false)
+            fire_changed()
+            notify("marked read locally — this forge has no mark-read endpoint")
+            if after then
+                after()
+            end
+            return
+        end
+        actions.mark_notification_read(nil, rec, function(ok, res)
+            if not ok then
+                notify("mark read failed: " .. ((res and (res.message or res.kind)) or "?"), vim.log.levels.WARN)
+                return
+            end
+            if after then
+                after()
+            end
+        end, note_opts(rec))
+    end
     --- `<CR>` — mark the notification read and open its topic. Same-repo topics drill in (the list is a
     --- focus-trapping modal, so close first then open — the topics `_open_topic` model); a cross-repo topic
     --- cannot be opened from here (repos are not path-anchored) → it is marked read + the user is pointed at
@@ -411,8 +455,9 @@ function M.open(opts)
             return
         end
         if rec.unread then
-            db.set_notification_unread(rec.id, false)
-            fire_changed()
+            -- Fire-and-continue: the open must not wait on the network. A failure notifies and the row
+            -- simply stays unread — the state the forge still holds.
+            mark_read(rec)
         end
         local number = rec.number
         if not number then
@@ -444,10 +489,16 @@ function M.open(opts)
             notify("place the cursor on a notification")
             return
         end
-        local want_unread = not rec.unread
-        db.set_notification_unread(rec.id, want_unread)
+        if rec.unread then
+            mark_read(rec, rebuild)
+            return
+        end
+        -- Marking UNREAD has no counterpart in these APIs (GitHub cannot un-read a thread, GitLab cannot
+        -- un-do a todo), so it is a local reading aid — and says so instead of implying a sync.
+        db.set_notification_unread(rec.id, true)
         fire_changed()
         rebuild()
+        notify("marked unread locally (the forge keeps its own read state)")
     end
 
     --- `R` — mark ALL notifications read (across every tracked repo). Confirms when destructive + many.
@@ -457,21 +508,48 @@ function M.open(opts)
             notify("no unread notifications")
             return
         end
-        local function apply()
-            db.mark_all_notifications_read()
-            fire_changed()
-            rebuild()
-            notify(
-                ("marked %d notification%s read locally (the forge is not told)"):format(
-                    count,
-                    count == 1 and "" or "s"
-                )
-            )
+        -- Mark-all is repo-scoped, so it needs a repo: the context one, else the repo under the cursor.
+        local rec = cur_notification()
+        local target = context_repo or (rec and db.repository(rec.repo_id))
+        if not target then
+            notify("open the inbox inside a tracked repository to mark its notifications read", vim.log.levels.WARN)
+            return
         end
-        if config.confirm_destructive and count >= MANY then
+        local supported = client.caps(target.forge).notifications_mark == true
+        -- GitLab's todo API has NO project-scoped "mark all": it clears the ACCOUNT's whole todo list.
+        -- Saying so in the confirm is the difference between a scoped action and a surprise.
+        local account_wide = target.forge == "gitlab"
+
+        local function apply()
+            if not supported then
+                db.mark_all_notifications_read(target.id)
+                fire_changed()
+                rebuild()
+                notify(("marked %d read locally — %s has no mark-read endpoint"):format(count, target.forge))
+                return
+            end
+            actions.mark_notifications_read(nil, function(ok, res)
+                if not ok then
+                    notify(
+                        "mark all read failed: " .. ((res and (res.message or res.kind)) or "?"),
+                        vim.log.levels.WARN
+                    )
+                    return
+                end
+                rebuild()
+                notify(
+                    (res and res.repo_scoped == false) and "every todo marked done on gitlab"
+                        or ("marked %d notification%s read"):format(count, count == 1 and "" or "s")
+                )
+            end, { repo_row = target })
+        end
+
+        if config.confirm_destructive and (count >= MANY or account_wide) then
             ui.confirm({
                 title = "Mark all read",
-                prompt = ("Mark all %d unread notifications read?"):format(count),
+                prompt = account_wide
+                        and ("Mark ALL todos done on gitlab? (%d here; the whole account is cleared)"):format(count)
+                    or ("Mark all %d unread notifications read?"):format(count),
                 callback = function(yes)
                     if yes then
                         apply()

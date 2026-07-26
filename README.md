@@ -56,7 +56,9 @@ caps model already admits it, and a Bitbucket backend module is the only thing m
   (`virt_lines`), with a plain hunk-panel fallback when `lvim-git` is absent; add / reply / resolve
   comments and submit a batched review (approve / request-changes / comment) via a transient.
 - **Notifications inbox** (`:LvimForge notifications`) — every tracked repo, grouped per repo, with
-  an `unread ● all` filter, reason badges, `<CR>` open + mark-read, and mark-all.
+  an `unread ● all` filter, reason badges, `<CR>` open + mark-read, and mark-all. The read state is
+  pushed to the FORGE (it is authoritative there and a local-only write would revert on the next pull);
+  the cache follows only once the forge accepts.
 - **Dispatch** (`:LvimForge dispatch`, `?` in any panel) — the discoverable, caps-gated menu of
   every command (Magit-forge's `?`), context-aware over the topic under the cursor.
 - **lvim-git integration** (soft) — a trailing **Forge** section in `:LvimGit status` (open PRs /
@@ -226,7 +228,7 @@ dispatch. `q` / `<Esc>` closes.
 | Key       | Action                            |
 | --------- | --------------------------------- |
 | `<CR>`    | open the topic (marks it read; or fire the focused filter button) |
-| `r` / `R` | toggle read-state / mark all read — **locally**: the forge is not told, so anything still unread there returns unread on the next pull |
+| `r` / `R` | mark read on the forge / mark all read. Marking *unread* is local — no forge API can un-read a thread |
 | `P`       | pull notifications                |
 
 **Composer** — `<C-c><C-c>` submit, `<C-c><C-k>` / `q` cancel (dirty buffers confirm),

@@ -310,6 +310,101 @@ function M.set_lock(root, number, lock, cb, opts)
     end)
 end
 
+-- ── notifications (read state, pushed to the forge) ──────────────────────────
+
+--- Route a bodyless/idempotent spec to this repo's forge and issue it, the `set_lock` pattern: these
+--- endpoints answer 202/204/205 with nothing worth upserting, so `sync.mutate` (whose normalize→upsert
+--- path needs an entity body) is bypassed.
+---@param ctx table
+---@param spec table
+---@param cb? fun(ok: boolean, res_or_err: table?)
+---@param on_ok fun()
+---@param what string  the verb name, for the error message
+---@return nil
+local function issue_direct(ctx, spec, cb, on_ok, what)
+    spec.forge, spec.host, spec.base = ctx.forge, ctx.host, ctx.base
+    if ctx.transport ~= nil then
+        spec.transport = ctx.transport
+    end
+    client.request(spec, function(_, err)
+        if err then
+            return fail(cb, err.kind or "http", err.message or (what .. " failed"))
+        end
+        on_ok()
+    end)
+end
+
+--- Mark ONE notification read ON THE FORGE, then reconcile the cached row.
+---
+--- The local `unread` column is NOT authoritative: `sync.pull_notifications` upserts each row from the
+--- API, where `unread` is. Writing only locally therefore un-did itself on the next pull, which is why
+--- this exists. The local write happens only AFTER the forge accepts, so a failed request leaves the
+--- inbox showing the truth rather than a lie.
+---@param root? string|integer
+---@param note table  a notifications row (needs `id` and `forge_id`)
+---@param cb? fun(ok: boolean, res_or_err: table?)
+---@param opts? table
+function M.mark_notification_read(root, note, cb, opts)
+    local repo_row, ctx = resolve(root, opts)
+    if not repo_row or not ctx then
+        return fail(cb, "not_tracked", "repository is not tracked (`:LvimForge add`)")
+    end
+    local backend = backend_for(repo_row, cb)
+    if not backend then
+        return
+    end
+    if type(backend.mark_notification_read) ~= "function" then
+        return fail(cb, "unsupported", repo_row.forge .. " cannot mark a notification read")
+    end
+    if not (note and note.forge_id) then
+        return fail(cb, "invalid", "this notification has no forge id (pull it first)")
+    end
+    issue_direct(ctx, backend.mark_notification_read(ctx, note.forge_id), cb, function()
+        db.set_notification_unread(note.id, false)
+        vim.api.nvim_exec_autocmds("User", {
+            pattern = "LvimForgeNotificationsChanged",
+            data = { root = event_root(root, repo_row), unread = db.notifications_unread() },
+        })
+        if cb then
+            cb(true, { id = note.id })
+        end
+    end, "mark read")
+end
+
+--- Mark EVERY notification of this repository read on the forge, then clear the cached rows.
+---
+--- Scope differs by forge and the caller is told so: GitHub and Gitea take a repo-scoped endpoint;
+--- GitLab's todo API has only an account-wide "mark all done", so there the verb clears the whole todo
+--- list. `repo_scoped` reports which happened so the UI can say it.
+---@param root? string|integer
+---@param cb? fun(ok: boolean, res_or_err: table?)
+---@param opts? table
+function M.mark_notifications_read(root, cb, opts)
+    local repo_row, ctx = resolve(root, opts)
+    if not repo_row or not ctx then
+        return fail(cb, "not_tracked", "repository is not tracked (`:LvimForge add`)")
+    end
+    local backend = backend_for(repo_row, cb)
+    if not backend then
+        return
+    end
+    if type(backend.mark_notifications_read) ~= "function" then
+        return fail(cb, "unsupported", repo_row.forge .. " cannot mark notifications read")
+    end
+    local repo_scoped = repo_row.forge ~= "gitlab"
+    issue_direct(ctx, backend.mark_notifications_read(ctx), cb, function()
+        -- Clear what the request covered: this repo's rows, or every cached row for the account-wide form.
+        db.mark_all_notifications_read(repo_scoped and repo_row.id or nil)
+        vim.api.nvim_exec_autocmds("User", {
+            pattern = "LvimForgeNotificationsChanged",
+            data = { root = event_root(root, repo_row), unread = db.notifications_unread() },
+        })
+        if cb then
+            cb(true, { repo_scoped = repo_scoped })
+        end
+    end, "mark all read")
+end
+
 -- ── labels / assignees / milestone (PATCH the issue; apply the full sets from the response) ──────────
 
 --- Replace a topic's label set (`names` = label names). Response: the issue → the topic + label/assignee

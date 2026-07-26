@@ -44,6 +44,7 @@ local CAPS = {
         pending_review = true,
         draft = true,
         notifications = true,
+        notifications_mark = true, -- PATCH /notifications/threads/{id} · PUT /repos/{o}/{n}/notifications
         graphql = true,
         lock = true, -- PUT/DELETE /issues/{n}/lock
     },
@@ -56,6 +57,7 @@ local CAPS = {
         pending_review = true, -- batched client-side (the DB-pending model), submitted as discussions + approval
         draft = true, -- via the Draft: title prefix (a title edit)
         notifications = true, -- the todos inbox
+        notifications_mark = true, -- POST /todos/{id}/mark_as_done · POST /todos/mark_as_done
         graphql = false, -- v1 uses REST exclusively
         merge = true,
         rebase = true,
@@ -74,6 +76,7 @@ local CAPS = {
         pending_review = true,
         draft = true,
         notifications = true,
+        notifications_mark = true, -- PATCH /notifications/threads/{id}?to-status=read
         graphql = false,
         merge = true,
         rebase = true,
@@ -91,6 +94,7 @@ local CAPS = {
         pending_review = true,
         draft = true,
         notifications = true,
+        notifications_mark = true, -- PATCH /notifications/threads/{id}?to-status=read
         graphql = false,
         merge = true,
         rebase = true,

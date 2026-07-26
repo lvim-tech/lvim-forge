@@ -57,6 +57,7 @@ M.caps = {
     pending_review = true, -- accumulated locally (DB), submitted as ONE native Gitea review
     draft = true, -- via the WIP: title prefix (a title edit, not a dedicated API)
     notifications = true, -- the /notifications inbox (GitHub-shaped)
+    notifications_mark = true, -- PATCH /notifications/threads/{id}?to-status=read (+ the repo-scoped PUT)
     graphql = false, -- Gitea has no GraphQL
     merge = true,
     rebase = true,
@@ -624,6 +625,31 @@ function M.draft_op(ctx, number, topic, want_draft, cb)
 end
 
 -- ── reviewers (PR — Gitea, like GitHub, has no replace: POST additions / DELETE removals) ─────────────
+
+--- Mark ONE notification thread read. Response: 205 Reset Content with the updated thread. `PATCH
+--- /notifications/threads/{id}?to-status=read` — Gitea takes the target state as a QUERY parameter
+--- rather than in a body, unlike GitHub's bodyless PATCH.
+---@param ctx table
+---@param thread_id string|integer
+---@return table spec
+function M.mark_notification_read(ctx, thread_id)
+    return routed(ctx, {
+        method = "PATCH",
+        path = ("/notifications/threads/%s"):format(tostring(thread_id)),
+        query = { ["to-status"] = "read" },
+    })
+end
+
+--- Mark every notification of THIS repository read. `PUT /repos/{o}/{n}/notifications?to-status=read`.
+---@param ctx table
+---@return table spec
+function M.mark_notifications_read(ctx)
+    return routed(ctx, {
+        method = "PUT",
+        path = repo_path(ctx) .. "/notifications",
+        query = { ["to-status"] = "read" },
+    })
+end
 
 --- Request reviewers on a PR (adds them). `POST /repos/{o}/{r}/pulls/{number}/requested_reviewers`.
 ---@param ctx LvimForgeGithubCtx

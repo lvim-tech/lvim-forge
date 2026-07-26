@@ -47,6 +47,7 @@ M.caps = {
     pending_review = true, -- accumulated locally (DB), submitted as discussions + approval
     draft = true, -- via the Draft: title prefix (a title edit, not a dedicated API)
     notifications = true, -- the todos API
+    notifications_mark = true, -- POST /todos/{id}/mark_as_done; mark-ALL is account-wide (no project scope)
     graphql = false, -- v1 uses REST exclusively
     merge = true,
     rebase = true,
@@ -415,6 +416,29 @@ function M.notifications(ctx, since, cb)
 end
 
 -- ── WRITE endpoints (mutations) ─────────────────────────────────────────────────
+
+--- Mark ONE todo done. Response: the updated todo. `POST /todos/{id}/mark_as_done`. GitLab's inbox IS
+--- the todo list, so a notification's forge id is a todo id — the same value `M.notifications` returned.
+---@param ctx table
+---@param thread_id string|integer
+---@return table spec
+function M.mark_notification_read(ctx, thread_id)
+    return routed(ctx, {
+        method = "POST",
+        path = ("/todos/%s/mark_as_done"):format(tostring(thread_id)),
+    })
+end
+
+--- Mark every todo done. Response: 204 No Content. `POST /todos/mark_as_done`.
+---
+--- GitLab has NO project-scoped variant: this clears the account's whole todo list, not just this
+--- project's. The action layer states that in its confirm, since the inbox verb otherwise reads as
+--- repo-scoped (which it is on GitHub and Gitea).
+---@param ctx table
+---@return table spec
+function M.mark_notifications_read(ctx)
+    return routed(ctx, { method = "POST", path = "/todos/mark_as_done" })
+end
 
 --- Post a new comment (note) on a topic. `POST /projects/{id}/{merge_requests|issues}/{iid}/notes`.
 ---@param ctx LvimForgeGitlabCtx

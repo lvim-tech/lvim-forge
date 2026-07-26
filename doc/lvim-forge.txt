@@ -188,9 +188,11 @@ Review workspace~
 
 Notifications inbox~
   <CR>           open the topic (marks it read; or fire the focused filter button)
-  r / R          toggle read-state / mark all read. The state is LOCAL: the
-                 forge is not told, so a notification still unread there comes
-                 back unread on the next pull.
+  r / R          mark read on the FORGE / mark all read. The cache is written
+                 only after the forge accepts, so a failed request leaves the
+                 inbox truthful. Marking UNREAD is local: no forge API can
+                 un-read a thread. On GitLab "mark all" clears the ACCOUNT's
+                 whole todo list (no project scope exists) and says so.
   P              pull notifications
 
 Composer~

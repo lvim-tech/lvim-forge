@@ -413,6 +413,32 @@ function M.lock_issue(ctx, number, lock)
     })
 end
 
+--- Mark ONE notification thread read. Response: 204 No Content (or 205). `PATCH
+--- /notifications/threads/{thread_id}`. `thread_id` is the notification's own forge id, not the topic's.
+---@param ctx LvimForgeGithubCtx
+---@param thread_id string|integer
+---@return table spec
+function M.mark_notification_read(ctx, thread_id)
+    return routed(ctx, {
+        method = "PATCH",
+        path = ("/notifications/threads/%s"):format(tostring(thread_id)),
+    })
+end
+
+--- Mark every notification of THIS repository read. Response: 202 Accepted (asynchronous on GitHub's
+--- side, so a pull immediately after can still report a thread unread for a moment). `PUT
+--- /repos/{o}/{n}/notifications`. The repo-scoped form is used rather than the account-wide `PUT
+--- /notifications`, because the inbox verb acts on the repository in context.
+---@param ctx LvimForgeGithubCtx
+---@return table spec
+function M.mark_notifications_read(ctx)
+    return routed(ctx, {
+        method = "PUT",
+        path = repo_path(ctx) .. "/notifications",
+        body = {},
+    })
+end
+
 --- Request reviewers on a PR (adds them). Response: the pull object (with `requested_reviewers`).
 --- `POST /repos/{o}/{n}/pulls/{number}/requested_reviewers`.
 ---@param ctx LvimForgeGithubCtx
