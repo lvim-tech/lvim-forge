@@ -614,6 +614,13 @@ function M.open(opts)
             title_pos = "center",
             subtitle = subtitle,
             size = { width = { fixed = 0.7 }, height = { fixed = 0.7 } },
+            -- NO RING AROUND THE WRITING AREA, but not flush against the edge either. Three borders
+            -- exist on this chassis; the two inner ones drew a box around the body — a frame around a
+            -- text field the reader is typing into, competing with the float's own title band and
+            -- footer for the same job. The panel's own border becomes BLANK CELLS: the geometry a
+            -- border provides (a cell of air on every side) without a glyph to draw it.
+            group_border = false,
+            panel_border = { " ", " ", " ", " ", " ", " ", " ", " " },
             content = { blocks = blocks },
             -- No bare q/<Esc> close: the body is editable and a normal-mode `q` maps to the dirty-guarded
             -- cancel (below); Esc just leaves insert. This keeps typed work from being dropped by a stray key.

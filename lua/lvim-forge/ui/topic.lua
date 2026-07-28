@@ -114,12 +114,6 @@ local GLYPH = {
     file_removed = "\u{f458}", --  nf-oct-diff_removed
     file_renamed = "\u{f47c}", --  nf-oct-diff_renamed
     branch = "\u{e725}", --  nf-dev-git_branch (base ← head)
-    -- footer verb glyphs (each verified single-width)
-    pencil = "\u{f448}", --  nf-oct-pencil (edit)
-    issue = "\u{f41b}", --  nf-oct-issue_opened (state)
-    diff = "\u{f440}", --  nf-oct-diff (diff)
-    question = "\u{f059}", --  nf-fa-question_circle (help)
-    close = "\u{f00d}", --  nf-fa-times (close)
 }
 
 ---@param msg string
@@ -1644,49 +1638,43 @@ function M.open(root, number, opts)
         st.tabs = nil
     end
 
-    -- ── footer: the action bar (how-build-panels canon) — the key legend as chips, kind-aware (the PR-only
-    -- verbs appear only on a pull request), always ending in `g? help ● q close` so the panel is never a
-    -- dead-end without a visible way out. ──
+    -- ── footer: the action bar (how-build-panels canon) — the SHARED two-part button, kind-aware (the
+    -- PR-only verbs appear only on a pull request), always ending in `g? help ● q close` so the panel is
+    -- never a dead-end without a visible way out. ──
     local function build_footer()
-        --- One footer chip: its own GLYPH + its own palette accent, so the bar reads as distinct verbs
-        --- (comment blue · edit yellow · state orange · merge magenta · diff cyan · review green · help
-        --- teal · close red) instead of one flat legend. The glyph rides in the CAPTION (the footer kind is a
-        --- key badge — its lead box is the key itself), so the accent paints the glyph and the word together.
+        --- One footer action. NO glyph and NO colour of its own: the shared `action` button is a KEY box
+        --- and a TEXT box — blue key, yellow label, one tint for the whole bar — and a per-verb accent
+        --- turned the legend into a row of coloured chips that read as unrelated things instead of one
+        --- bar. The style lives in lvim-utils' footer palette, so a retune moves every bar in the set at
+        --- once; nothing here restates it.
         ---@param key string
         ---@param label string
         ---@param run function
-        ---@param icon string
-        ---@param accent string  a palette accent key
         ---@return table
-        local function chip(key, label, run, icon, accent)
-            local a = hl.section_accent(accent).text
-            return {
-                key = key,
-                label = icon .. " " .. label,
-                no_hotkey = true,
-                run = run,
-                style = { icon = { normal = a, active = a, hover = a }, text = { normal = a, active = a, hover = a } },
-            }
+        local function action(key, label, run)
+            -- A LEGEND, not a binding: the panel's own `keys` list already maps every one of these,
+            -- and a footer button that claimed them too would register the same key twice.
+            return { key = key, name = label, run = run, no_hotkey = true }
         end
         local sep = { type = "separator", text = GLYPH.dot, style = { padding = { 1, 1 }, hl = "LvimUiFooterSep" } }
         local topic = db.get_topic(repo_id, number, opts.kind)
         local is_pr = topic and topic.kind == "pullreq"
         local f = {
-            chip("c", "comment", do_comment, config.icons.comment, "blue"),
-            chip("e", "edit", do_edit, GLYPH.pencil, "yellow"),
-            chip("s", "state", do_state, GLYPH.issue, "orange"),
+            action("c", "comment", do_comment),
+            action("e", "edit", do_edit),
+            action("s", "state", do_state),
         }
         if is_pr then
             f[#f + 1] = sep
-            f[#f + 1] = chip("m", "merge", do_merge, config.icons.merged, "magenta")
-            f[#f + 1] = chip("d", "diff", do_full_diff, GLYPH.diff, "cyan")
-            f[#f + 1] = chip("v", "review", do_review, config.icons.review, "green")
+            f[#f + 1] = action("m", "merge", do_merge)
+            f[#f + 1] = action("d", "diff", do_full_diff)
+            f[#f + 1] = action("v", "review", do_review)
         end
         f[#f + 1] = sep
-        f[#f + 1] = chip("g?", "help", show_help, GLYPH.question, "teal")
-        f[#f + 1] = chip("q", "close", function(handle)
+        f[#f + 1] = action("g?", "help", show_help)
+        f[#f + 1] = action("q", "close", function(handle)
             handle.close()
-        end, GLYPH.close, "red")
+        end)
         return f
     end
 
