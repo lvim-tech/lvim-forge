@@ -223,7 +223,10 @@ end
 ---@param body any
 ---@return boolean
 local function is_array(body)
-    return type(body) == "table" and (vim.islist and vim.islist(body) or vim.tbl_islist(body))
+    -- `vim.islist` only. The old compatibility form was the `A and B or C` trap: with a table that
+    -- is NOT a list, `vim.islist(body)` is false and the `or` fell through to `vim.tbl_islist`,
+    -- which this Neovim no longer defines at all — a nil call on every non-array body.
+    return type(body) == "table" and vim.islist(body)
 end
 
 --- Drive the transport page by page, accumulating array bodies. `first` is the resolved head-spec;
