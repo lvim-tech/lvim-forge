@@ -180,8 +180,9 @@ end
 
 --- `:LvimForge remove` — untrack the current repo, deleting its row and everything under it (FK
 --- cascade). Confirmed via lvim-ui when `confirm_destructive`.
----@param p LvimForgeCmd
-local function do_remove(p)
+--- Takes no argument beyond the dispatcher's parsed command (unused — `remove` always acts on
+--- the current repo), kept in the handler shape for symmetry with its siblings.
+local function do_remove(_)
     local db = require("lvim-forge.db")
     if not db.available() then
         notify("the local database needs sqlite.lua (install kkharji/sqlite.lua)", vim.log.levels.ERROR)

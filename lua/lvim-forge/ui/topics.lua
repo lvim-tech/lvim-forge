@@ -429,11 +429,11 @@ function M.open(opts)
         st.registry[name] = t
         local spans = {}
         local label = ""
-        local function seg(text, hl)
+        local function seg(text, group)
             local start = #label
             label = label .. text
-            if hl then
-                spans[#spans + 1] = { start, #label, hl }
+            if group then
+                spans[#spans + 1] = { start, #label, group }
             end
         end
         -- unread dot (aligned: dot+space when unread, two spaces otherwise)

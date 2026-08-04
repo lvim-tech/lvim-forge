@@ -148,10 +148,11 @@ end
 --- Resolve (and cache) the transport for a forge/host per `config.transport`. "rest" everywhere / for
 --- gitea/codeberg (no CLI passthrough); "cli" when forced or when "auto" AND the CLI is installed+authed
 --- (probed once via `auth.cli_authed`), else "rest".
+--- The 2nd argument (`host` in the caller's signature) is ignored: the resolved transport is
+--- cached per FORGE, and no forge resolves differently per host.
 ---@param forge string
----@param host? string
 ---@return "cli"|"rest"
-function M.resolve_transport(forge, host)
+function M.resolve_transport(forge, _)
     if state.transport[forge] then
         return state.transport[forge]
     end

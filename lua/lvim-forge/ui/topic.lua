@@ -310,11 +310,11 @@ end
 --- repo the topic list resolved (a `tab`-hosted list's current buffer is the panel scratch, so the root is
 --- threaded through); nil detects from the current buffer (the `:LvimForge topic <n>` path).
 ---@param root? string|integer
----@param number integer|string
+---@param raw_number integer|string  accepted loosely (the `:LvimForge topic <n>` argument is a string)
 ---@param opts? { layout?: string, kind?: "issue"|"pullreq", from_list?: boolean }
 ---   `from_list` marks the drill-in from the topic LIST (the Magit `RET` path): closing this buffer then
 ---   REOPENS the list with its cursor aimed back at this topic, instead of dropping to the code beneath.
-function M.open(root, number, opts)
+function M.open(root, raw_number, opts)
     opts = opts or {}
     register_merge_transient() -- idempotent; ensures the merge popup def exists (config is merged by now)
     if not (config.topic and config.topic.enabled) then
@@ -325,12 +325,12 @@ function M.open(root, number, opts)
         notify("the local database needs sqlite.lua (install kkharji/sqlite.lua)", vim.log.levels.ERROR)
         return
     end
-    local num = tonumber(number)
+    local num = tonumber(raw_number)
     if not num then
         notify("a topic number is required (`:LvimForge topic <n>`)", vim.log.levels.WARN)
         return
     end
-    ---@type integer  a clean integer topic number (shadows the loosely-typed param)
+    ---@type integer  a clean integer topic number
     local number = math.floor(num)
 
     local client = require("lvim-forge.client")
@@ -1118,17 +1118,17 @@ function M.open(root, number, opts)
             notify("the full PR diff needs lvim-git (not installed)")
             return
         end
-        local detected = require("lvim-forge.client").detect(root)
-        if not (detected and detected.root) then
+        local git_detect = require("lvim-forge.client").detect(root)
+        if not git_detect or not git_detect.root then
             notify("not inside a git working tree", vim.log.levels.WARN)
             return
         end
-        local git_root = detected.root
-        local remote = detected.remote or "origin"
+        local git_root = git_detect.root
+        local remote = git_detect.remote or "origin"
         local git = require("lvim-forge.git")
         local stable = ("refs/forge/pr/%d"):format(number)
         notify("fetching #" .. number .. " head for the diff …")
-        local head_ref = actions.pull_head_ref(detected.forge, number) .. ":" .. stable
+        local head_ref = actions.pull_head_ref(git_detect.forge, number) .. ":" .. stable
         git.fetch_ref(git_root, remote, head_ref, function(fok, ferr)
             if not fok then
                 notify("fetch of the pull head failed: " .. (ferr or "?"), vim.log.levels.WARN)
@@ -1778,7 +1778,7 @@ function M._diff_file(root, m, f)
         return
     end
     local detected = require("lvim-forge.client").detect(root)
-    if not (detected and detected.root) then
+    if not detected or not detected.root then
         pcall(diff.open, { paths = { path } })
         return
     end

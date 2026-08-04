@@ -30,7 +30,13 @@ local M = {}
 ---@field base       string   the REST API base URL for this forge/host
 ---@field remote_url string
 ---@field remote?    string   the git remote name this URL came from
----@field root?      string   the absolute repo root (set by `detect`)
+---@field root?      string   the absolute repo root — set only by the working-tree resolvers below
+
+--- A repo resolved from a WORKING TREE. `detect` / `classify_remote` resolve the root before they
+--- classify anything and stamp it on the result, so `root` is guaranteed here — unlike the base
+--- class, which `classify_url` also produces from a bare URL with no tree behind it.
+---@class LvimForgeRootedRepo : LvimForgeRepo
+---@field root string
 
 --- Fallback remote-URL parser, used ONLY when lvim-git is not installed. Mirrors the shape of
 --- `lvim-git.browse.parse_remote`: `{ host, path }` (path = "owner/repo", no `.git`, no slashes).
@@ -227,7 +233,7 @@ end
 --- `LvimForgeRepo` (with `root`) or nil when there is no such repo/remote or the host is unknown.
 ---@param remote string
 ---@param root_or_buf? string|integer
----@return LvimForgeRepo?
+---@return LvimForgeRootedRepo?
 function M.classify_remote(remote, root_or_buf)
     local root = repo_root(start_dir(root_or_buf))
     if not root then
@@ -238,9 +244,11 @@ function M.classify_remote(remote, root_or_buf)
         return nil
     end
     local result = M.classify_url(url, remote)
-    if result then
-        result.root = root
+    if not result then
+        return nil
     end
+    result.root = root
+    ---@cast result LvimForgeRootedRepo  `root` was just stamped on, above
     return result
 end
 
@@ -248,7 +256,7 @@ end
 --- URL, classify it. Cached per root in `state.repos` (keyed by root) + `state.root_of` (dir → root).
 --- Returns nil when the path is not inside a git repo OR the remote is not a recognized forge.
 ---@param root_or_buf? string|integer
----@return LvimForgeRepo?
+---@return LvimForgeRootedRepo?
 function M.detect(root_or_buf)
     local dir = start_dir(root_or_buf)
     local cached_root = state.root_of[dir]
@@ -278,6 +286,7 @@ function M.detect(root_or_buf)
     end
     result.root = root
     state.repos[root] = result
+    ---@cast result LvimForgeRootedRepo  `root` was just stamped on, above
     return result
 end
 

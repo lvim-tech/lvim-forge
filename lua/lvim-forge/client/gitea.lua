@@ -183,9 +183,10 @@ end
 --- like GitLab). `cb({ topics, watermark, truncated }, err)`.
 ---@param ctx LvimForgeGithubCtx
 ---@param since? string  the ISO-8601 watermark
----@param opts? { selective?: boolean, viewer?: string }
+--- The 3rd argument (`opts` in the cross-forge signature) is ignored here: Gitea has no
+--- selective/viewer narrowing, so every call takes the same full listing.
 ---@param cb fun(result: { topics: table[], watermark: string?, truncated: boolean }?, err: table?)
-function M.topics_since(ctx, since, opts, cb)
+function M.topics_since(ctx, since, _, cb)
     -- `type` is omitted deliberately: Gitea returns issues AND pulls when it is not set.
     local query = { state = "all", limit = 50 }
     if since then
@@ -408,11 +409,9 @@ end
 
 --- Editing a review (line) comment has no clean Gitea endpoint — a clean `unsupported` the action layer
 --- surfaces (mirrors GitLab).
----@param _ctx LvimForgeGithubCtx
----@param _comment_id integer|string
----@param _body string
+--- Arity-compatible with the GitHub client (ctx, comment_id, body); all three are ignored.
 ---@return table spec
-function M.update_review_comment(_ctx, _comment_id, _body)
+function M.update_review_comment(_, _, _)
     return { kind = "unsupported", message = "editing a review comment is not supported on Gitea yet" }
 end
 
@@ -465,22 +464,20 @@ end
 --- Prepare a set-assignees spec: Gitea takes an `assignees` login array on the issue PATCH (no id
 --- resolution) → `cb(spec)`. `kind` is accepted for signature symmetry and ignored (a PR is an issue).
 ---@param ctx LvimForgeGithubCtx
----@param _kind string
 ---@param number integer
 ---@param logins string[]
 ---@param cb fun(spec: table?, err: table?)
-function M.prepare_assignees(ctx, _kind, number, logins, cb)
+function M.prepare_assignees(ctx, _, number, logins, cb)
     cb(M.update_issue(ctx, number, { assignees = logins or {} }))
 end
 
 --- A set-milestone spec: Gitea addresses a milestone by its global ID (= the cached row's `forge_id`), set
 --- on the issue PATCH; 0 clears. `milestone_row` is the cached milestones row; `kind` is ignored.
 ---@param ctx LvimForgeGithubCtx
----@param _kind string
 ---@param number integer
 ---@param milestone_row? table
 ---@return table spec
-function M.set_milestone_spec(ctx, _kind, number, milestone_row)
+function M.set_milestone_spec(ctx, _, number, milestone_row)
     local id = (milestone_row and tonumber(milestone_row.forge_id)) or 0
     return M.update_issue(ctx, number, { milestone = id })
 end
@@ -492,11 +489,10 @@ end
 --- the label NAMES (Gitea ≥ 1.19 / Forgejo / Codeberg accept names in `IssueLabelsOption`), and `apply`
 --- upserts the returned labels + sets them on the topic. `cb(plan, err)`.
 ---@param ctx LvimForgeGithubCtx
----@param _kind string
 ---@param number integer
 ---@param names string[]
 ---@param cb fun(plan: { specs: table[], apply: fun(repo_row: table, body: table) }?, err: table?)
-function M.plan_labels(ctx, _kind, number, names, cb)
+function M.plan_labels(ctx, _, number, names, cb)
     local db = require("lvim-forge.db")
     local model = require("lvim-forge.model")
     local spec = routed(ctx, {
@@ -596,10 +592,9 @@ end
 
 --- Gitea removes the merged source branch via the merge (`delete_branch_after_merge`), so there is no
 --- separate head-ref delete — a clean `unsupported` the merge verb skips (mirrors GitLab).
----@param _ctx LvimForgeGithubCtx
----@param _branch string
+--- Arity-compatible with the GitHub client (ctx, branch); both are ignored.
 ---@return table spec
-function M.delete_ref(_ctx, _branch)
+function M.delete_ref(_, _)
     return { kind = "unsupported", message = "Gitea removes the source branch as part of the merge" }
 end
 
@@ -715,7 +710,7 @@ function M.plan_reviewers(ctx, number, desired, current, cb)
     local db = require("lvim-forge.db")
     cb({
         specs = specs,
-        apply = function(repo_row, _body)
+        apply = function(repo_row, _)
             local topic = db.get_topic(repo_row.id, number, "pullreq")
             if topic then
                 db.set_review_requests(topic.id, desired or {})
@@ -758,11 +753,9 @@ end
 
 --- Resolving a review conversation has no stable Gitea REST endpoint — a clean `unsupported` (also gated
 --- off by `caps.thread_resolve = false`, so the UI never offers it).
----@param _ctx LvimForgeGithubCtx
----@param _node_id string
----@param _resolve boolean
+--- Arity-compatible with the GitHub client (ctx, node_id, resolve); all three are ignored.
 ---@return table spec
-function M.resolve_thread(_ctx, _node_id, _resolve)
+function M.resolve_thread(_, _, _)
     return { kind = "unsupported", message = "resolving review conversations is not supported on Gitea yet" }
 end
 

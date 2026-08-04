@@ -701,22 +701,20 @@ end
 --- Prepare a set-assignees spec (GitHub takes a login array directly on the issue PATCH — no id
 --- resolution). `cb(spec, err)`; the `kind` is accepted for signature symmetry with GitLab and ignored.
 ---@param ctx LvimForgeGithubCtx
----@param _kind string
 ---@param number integer
 ---@param logins string[]
 ---@param cb fun(spec: table?, err: table?)
-function M.prepare_assignees(ctx, _kind, number, logins, cb)
+function M.prepare_assignees(ctx, _, number, logins, cb)
     cb(M.update_issue(ctx, number, { assignees = logins or {} }))
 end
 
 --- A set-milestone spec: GitHub PATCHes the issue with the milestone NUMBER (or `vim.NIL` to clear).
 --- `milestone_row` is the cached milestones row; `kind` is accepted for symmetry and ignored.
 ---@param ctx LvimForgeGithubCtx
----@param _kind string
 ---@param number integer
 ---@param milestone_row? table
 ---@return table spec
-function M.set_milestone_spec(ctx, _kind, number, milestone_row)
+function M.set_milestone_spec(ctx, _, number, milestone_row)
     return M.update_issue(ctx, number, { milestone = milestone_row and milestone_row.number or vim.NIL })
 end
 
@@ -768,10 +766,9 @@ end
 --- signature symmetry with GitLab (whose draft toggle is a title edit) and unused here.
 ---@param ctx LvimForgeGithubCtx
 ---@param number integer
----@param _topic table
 ---@param want_draft boolean
 ---@param cb fun(spec: table?, err: table?)
-function M.draft_op(ctx, number, _topic, want_draft, cb)
+function M.draft_op(ctx, number, _, want_draft, cb)
     M.pull_node_id(ctx, number, function(node_id, err)
         if err then
             cb(nil, err)

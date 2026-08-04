@@ -211,9 +211,10 @@ end
 --- GitLab v1 (the whole project is fetched; documented). `cb({ topics, watermark, truncated }, err)`.
 ---@param ctx LvimForgeGitlabCtx
 ---@param since? string  the ISO-8601 watermark
----@param opts? { selective?: boolean, viewer?: string }
+--- The 3rd argument (`opts` in the cross-forge signature) is ignored here: the `selective`
+--- involves-me mode is not distinguished for GitLab v1, so every call fetches the whole project.
 ---@param cb fun(result: { topics: table[], watermark: string?, truncated: boolean }?, err: table?)
-function M.topics_since(ctx, since, opts, cb)
+function M.topics_since(ctx, since, _, cb)
     local base_query = { order_by = "updated_at", sort = "asc", per_page = 100, scope = "all" }
     if since then
         base_query.updated_after = since
@@ -469,11 +470,9 @@ end
 
 --- Editing a diff (review) comment requires its owning discussion id, which the edit verb does not carry —
 --- deferred for GitLab v1 (a clean `unsupported` the action layer surfaces).
----@param _ctx LvimForgeGitlabCtx
----@param _comment_id integer|string
----@param _body string
+--- Arity-compatible with the GitHub client (ctx, comment_id, body); all three are ignored.
 ---@return table spec
-function M.update_review_comment(_ctx, _comment_id, _body)
+function M.update_review_comment(_, _, _)
     return { kind = "unsupported", message = "editing a review comment is not supported on GitLab yet" }
 end
 
@@ -584,10 +583,9 @@ end
 
 --- GitLab removes the merged source branch via the merge request merge (`should_remove_source_branch`), so
 --- there is no separate head-ref delete — a clean `unsupported` the merge verb skips.
----@param _ctx LvimForgeGitlabCtx
----@param _branch string
+--- Arity-compatible with the GitHub client (ctx, branch); both are ignored.
 ---@return table spec
-function M.delete_ref(_ctx, _branch)
+function M.delete_ref(_, _)
     return { kind = "unsupported", message = "GitLab removes the source branch as part of the merge" }
 end
 
@@ -696,9 +694,8 @@ end
 ---@param ctx LvimForgeGitlabCtx
 ---@param number integer
 ---@param desired string[]
----@param _current string[]
 ---@param cb fun(plan: { specs: table[], apply: fun(repo_row: table, body: table) }?, err: table?)
-function M.plan_reviewers(ctx, number, desired, _current, cb)
+function M.plan_reviewers(ctx, number, desired, _, cb)
     resolve_ids(ctx, desired, function(ids, err)
         if err then
             cb(nil, err)

@@ -897,6 +897,9 @@ function M.setup_poll()
         return
     end
     poll_timer = uv.new_timer()
+    if not poll_timer then
+        return -- libuv could not allocate the handle; nothing to start or release
+    end
     -- Release it on exit. `M.stop_poll` existed but nothing ever called it, so the timer lived to the
     -- end of the process: an un-closed uv handle, and — worse — a scheduled poll could still fire
     -- network work while Neovim was tearing down. Registered once, next to the only thing that starts it.
