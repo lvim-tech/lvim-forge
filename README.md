@@ -88,7 +88,7 @@ no-op when disabled or when the soft dependency is absent.
 
 Hard dependencies:
 
-- **Neovim >= 0.10** (`vim.system`, `vim.uv`, `vim.json`).
+- **Neovim >= 0.12** (the lvim-* ecosystem baseline; `vim.system`, `vim.uv`, `vim.json`).
 - **lvim-ui**, **lvim-utils**, **lvim-icons** — the panel chassis, palette / store / merge helpers,
   and file devicons.
 - **sqlite.lua** (via `lvim-utils.store`) — the topic cache is the plugin; without it lvim-forge

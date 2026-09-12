@@ -39,10 +39,10 @@ function M.check()
     health.start("lvim-forge")
 
     -- Neovim.
-    if vim.fn.has("nvim-0.10") == 1 then
-        health.ok("Neovim >= 0.10 (vim.system, vim.uv, vim.json)")
+    if vim.fn.has("nvim-0.12") == 1 then
+        health.ok("Neovim >= 0.12 (the lvim-* ecosystem baseline; vim.system, vim.uv, vim.json)")
     else
-        health.error("Neovim >= 0.10 is required")
+        health.error("Neovim >= 0.12 is required (the lvim-* ecosystem baseline)")
     end
 
     -- Transport binaries.
