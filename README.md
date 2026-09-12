@@ -149,9 +149,12 @@ For the REST transport a **token is resolved live per request** (first hit wins,
 reported by `:checkhealth`, and **never persisted to the DB**):
 
 1. the per-forge `auth.<forge>.token` — a string, or a function (shell out to a secret manager);
-2. its `auth.<forge>.env` environment variable (e.g. `GITHUB_TOKEN`);
-3. `~/.netrc` (`machine <host> … password <token>`) when `auth.netrc = true`;
-4. for Gitea / Codeberg, the `tea` CLI logins when `auth.gitea.tea = true`.
+2. the **lvim-keyring** wallet entry `forge/<host>` when lvim-keyring is installed and unlocked
+   (`:LvimForge auth store <host>` stores one behind a masked prompt; a locked wallet is skipped,
+   never prompted for);
+3. its `auth.<forge>.env` environment variable (e.g. `GITHUB_TOKEN`);
+4. `~/.netrc` (`machine <host> … password <token>`) when `auth.netrc = true`;
+5. for Gitea / Codeberg, the `tea` CLI logins when `auth.gitea.tea = true`.
 
 Only the token **source** (never the token itself) is ever surfaced, and only in the health report.
 
@@ -177,6 +180,7 @@ in the arguments and is sticky for the session; all four layouts work for every 
 | `:LvimForge remove`                          | untrack the current repo (cascade-deletes its cached rows)     |
 | `:LvimForge repos`                           | list the tracked repositories                                  |
 | `:LvimForge dispatch`                        | the dispatch menu of every command                             |
+| `:LvimForge auth store [host]`               | store an API token for `host` in the lvim-keyring wallet       |
 
 ## Panels & keymaps
 
@@ -308,8 +312,8 @@ require("lvim-forge").setup({
     -- "auto" = gh/glab CLI when installed+authed, else curl+PAT. "cli" forces the CLI (REST for
     -- gitea/codeberg). "rest" forces curl everywhere.
     transport = "auto",
-    -- Token resolution (first hit wins, probed once, reported by health, NEVER stored):
-    -- per-forge token (string | fun) → env var → ~/.netrc → for gitea the tea CLI logins.
+    -- Token resolution (first hit wins, probed once, reported by health, NEVER stored): per-forge
+    -- token (string | fun) → the lvim-keyring wallet → env var → ~/.netrc → for gitea the tea CLI logins.
     auth = {
         netrc = true, -- allow a ~/.netrc lookup
         github = { token = nil, env = "GITHUB_TOKEN" }, -- token: string | fun():string?

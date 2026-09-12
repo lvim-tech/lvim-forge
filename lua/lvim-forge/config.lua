@@ -148,9 +148,10 @@ return {
     -- back to REST for gitea/codeberg, which have no raw-API passthrough). "rest" forces curl everywhere.
     transport = "auto",
     -- Token resolution order (first hit wins, probed once, reported by health, NEVER persisted): the
-    -- per-forge `token` (string | function) → its `env` var → ~/.netrc (when `netrc`) → for gitea the
-    -- `tea` CLI logins (when `gitea.tea`). When the CLI transport runs, the CLI owns its own auth and
-    -- no token is resolved here at all.
+    -- per-forge `token` (string | function) → the lvim-keyring wallet (`forge/<host>`, when installed and
+    -- unlocked; `:LvimForge auth store <host>` fills it) → its `env` var → ~/.netrc (when `netrc`) → for
+    -- gitea the `tea` CLI logins (when `gitea.tea`). When the CLI transport runs, the CLI owns its own auth
+    -- and no token is resolved here at all.
     auth = {
         netrc = true, -- allow ~/.netrc (machine <host> … password <token>)
         github = { token = nil, env = "GITHUB_TOKEN" }, -- token: string | fun():string?

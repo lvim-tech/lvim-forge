@@ -550,7 +550,7 @@ function M.open(opts)
                 { "<CR>", "open the topic (or fire the focused filter button)" },
                 { "/", "search (label: author: milestone: mark: #n + text)" },
                 { "P", "pull (sync with the forge)" },
-                { "a", "topic actions" },
+                { "a", "topic actions (later)" },
                 { "n", "create a topic" },
                 { "N", "notifications" },
                 { "?", "dispatch (all commands)" },

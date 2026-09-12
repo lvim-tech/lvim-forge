@@ -117,9 +117,12 @@ For the REST transport a token is resolved live per request (first hit wins,
 probed once, reported by :checkhealth, and NEVER persisted to the DB):
 
   1. the per-forge auth.<forge>.token — a string, or a function
-  2. its auth.<forge>.env environment variable (e.g. GITHUB_TOKEN)
-  3. ~/.netrc (machine <host> … password <token>) when auth.netrc = true
-  4. for gitea/codeberg, the tea CLI logins when auth.gitea.tea = true
+  2. the lvim-keyring wallet entry forge/<host>, when lvim-keyring is
+     installed and unlocked (`:LvimForge auth store <host>` stores one; a
+     locked wallet is skipped, never prompted for)
+  3. its auth.<forge>.env environment variable (e.g. GITHUB_TOKEN)
+  4. ~/.netrc (machine <host> … password <token>) when auth.netrc = true
+  5. for gitea/codeberg, the tea CLI logins when auth.gitea.tea = true
 
 Only the token SOURCE (never the token itself) is ever surfaced, in health.
 
@@ -148,6 +151,9 @@ topic list (the default view).
   remove                     untrack the current repo (cascade-deletes its rows)
   repos                      list the tracked repositories
   dispatch                   the dispatch menu of every command
+  auth store [host]          store an API token for host in the lvim-keyring
+                             wallet (masked prompt; prompts for the host when
+                             omitted)
 
 ==============================================================================
 7. PANELS & MAPPINGS                                        *lvim-forge-mappings*
