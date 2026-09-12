@@ -795,9 +795,11 @@ function M.merge(root, number, params, cb, opts)
         commit_message = params.commit_message,
         delete_branch = params.delete_branch and true or false,
     })
-    -- The merge response is `{ sha, merged, message }` (no full topic) → reconcile the cached state.
+    -- The merge response carries no full topic: GitHub answers `{ sha, merged, message }`; GitLab answers
+    -- the merge request object itself, whose `state` is "merged" (it has no `merged` boolean, so the cache
+    -- stayed "open" until the next pull). Either shape reconciles the cached state here.
     spec.apply = function(rr, body)
-        if type(body) == "table" and util.truthy(body.merged) then
+        if type(body) == "table" and (util.truthy(body.merged) or body.state == "merged") then
             local t = db.get_topic(rr.id, number, "pullreq")
             if t then
                 db.set_topic_state(t.id, "merged")
