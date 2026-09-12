@@ -228,8 +228,9 @@ function github.thread(api, ctx)
         path = api.path,
         line = api.line,
         side = api.diffSide or api.side,
-        resolved = bool(api.isResolved ~= nil and api.isResolved or api.resolved),
-        outdated = bool(api.isOutdated ~= nil and api.isOutdated or api.outdated),
+        -- Not `A and B or C`: a GraphQL `isResolved = false` fell through to the REST `resolved` (nil).
+        resolved = bool(api.isResolved == nil and api.resolved or api.isResolved),
+        outdated = bool(api.isOutdated == nil and api.outdated or api.isOutdated),
     }
 end
 
