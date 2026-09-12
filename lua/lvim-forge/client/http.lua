@@ -262,8 +262,17 @@ function M.request(ctx, spec, cb)
         local dump = read_file(dump_path)
         unlink(dump_path)
         unlink(cfg_path)
-        if res.code ~= 0 and (res.stdout == "" or res.stdout == nil) then
-            cb(nil, { kind = "transport", message = "curl exit " .. res.code .. ": " .. vim.trim(res.stderr) })
+        -- A non-zero exit means the transfer did NOT complete. curl still writes the `-w` trailer then
+        -- (`\n000` for no response at all — DNS, a refused connection, TLS; a real status over a body cut
+        -- short by `--max-time`), so stdout is never empty and the old empty-stdout test let both through:
+        -- the first surfaced as a meaningless "HTTP 0", the second as a 200 whose truncated body decoded to
+        -- a raw string that every caller then read as an empty collection. Report curl's own message.
+        if res.code ~= 0 then
+            local why = vim.trim(res.stderr or "")
+            cb(nil, {
+                kind = "transport",
+                message = "curl exit " .. res.code .. (why ~= "" and (": " .. why) or ""),
+            })
             return
         end
         -- Split the appended status line off the tail of stdout.
