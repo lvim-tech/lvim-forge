@@ -108,7 +108,10 @@ end
 function github.topic(api, ctx)
     local is_pr = api.pull_request ~= nil or api.head ~= nil or api.base ~= nil
     local state
-    if api.merged or api.merged_at then
+    -- A pull object carries `merged_at: null` until it is merged, and a decoded JSON null is `vim.NIL` —
+    -- a truthy sentinel. Read through `present()`: a bare `api.merged_at` test marked EVERY open pull
+    -- request "merged" on its first detail pull.
+    if api.merged == true or present(api.merged_at) then
         state = "merged"
     else
         state = api.state -- "open" | "closed"
@@ -647,7 +650,8 @@ function gitea.topic(api, ctx)
     local pr_meta = type(api.pull_request) == "table" and api.pull_request or nil
     local is_pr = pr_meta ~= nil or api.head ~= nil or api.base ~= nil
     local state
-    if api.merged or api.merged_at or (pr_meta and pr_meta.merged) then
+    -- `merged_at` is a JSON null (decoded to the truthy `vim.NIL`) on an unmerged pull — see github.topic.
+    if api.merged == true or present(api.merged_at) or (pr_meta and pr_meta.merged == true) then
         state = "merged"
     else
         state = api.state -- "open" | "closed"
