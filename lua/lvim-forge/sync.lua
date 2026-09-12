@@ -36,6 +36,7 @@ local uv = vim.uv
 local config = require("lvim-forge.config")
 local state = require("lvim-forge.state")
 local db = require("lvim-forge.db")
+local util = require("lvim-forge.util")
 local model = require("lvim-forge.model")
 local client = require("lvim-forge.client")
 local detect = require("lvim-forge.client.detect")
@@ -77,31 +78,6 @@ local function now_iso()
     return os.date("!%Y-%m-%dT%H:%M:%SZ") --[[@as string]]
 end
 
---- The epoch seconds of a UTC ISO-8601 string (its fields are UTC; correct `os.time`'s local-time
---- interpretation by the machine's UTC offset). Returns nil when unparseable.
----@param iso string
----@return integer?
-local function utc_epoch(iso)
-    local Y, Mo, D, h, m, s = iso:match("(%d+)-(%d+)-(%d+)[T ](%d+):(%d+):(%d+)")
-    if not Y then
-        return nil
-    end
-    local as_local = os.time({
-        year = tonumber(Y) or 1970,
-        month = tonumber(Mo) or 1,
-        day = tonumber(D) or 1,
-        hour = tonumber(h) or 0,
-        min = tonumber(m) or 0,
-        sec = tonumber(s) or 0,
-    })
-    if not as_local then
-        return nil
-    end
-    -- os.time(os.date("!*t")) reads a UTC wallclock AS local → the difference is the local↔UTC offset.
-    local offset = os.time(os.date("!*t") --[[@as osdateparam]]) - os.time()
-    return as_local - offset
-end
-
 --- Whether a repository row's cache is stale (never pulled, or older than `stale_after` seconds).
 ---@param repo table  a `repositories` row
 ---@param stale_after integer
@@ -110,7 +86,7 @@ local function is_stale(repo, stale_after)
     if not repo.pulled_at or repo.pulled_at == "" then
         return true
     end
-    local pulled = utc_epoch(repo.pulled_at)
+    local pulled = util.iso_epoch(repo.pulled_at)
     if not pulled then
         return true
     end
@@ -196,6 +172,10 @@ local function upsert_detail(forge, repo_id, detail, ms_map)
     if not topic_id then
         return
     end
+    -- `upsert_topic` goes through `store:update`, which cannot NULL a column (a missing key keeps the
+    -- old value): a milestone removed on the forge stayed on the cached topic after a detail pull.
+    -- The remote set is the truth here, so write it explicitly (nil clears).
+    db.set_milestone(topic_id, row.milestone_id)
 
     local is_pr = detail.pull ~= nil
     if is_pr then
@@ -315,7 +295,7 @@ end
 ---@param number integer
 ---@param pull_api table  a GitHub pull object (carries `requested_reviewers`)
 function M.apply_pr_reviewers(repo_id, number, pull_api)
-    local topic = db.get_topic(repo_id, number)
+    local topic = db.get_topic(repo_id, number, "pullreq")
     if not topic then
         return
     end
@@ -389,7 +369,8 @@ local function notification_topic_id(forge, repo_id, n)
     if not num then
         return nil
     end
-    local topic = db.get_topic(repo_id, num)
+    -- GitLab issues and merge requests share numbers (separate iid spaces): the url says which.
+    local topic = db.get_topic(repo_id, num, util.topic_kind_from_url(url))
     return topic and topic.id or nil
 end
 
@@ -454,7 +435,9 @@ function M.pull(root, opts, cb)
         return
     end
 
-    local key = (type(root) == "string" and root ~= "" and root) or ("repo:" .. tostring(repo_row.id))
+    -- One in-flight pull per REPOSITORY, whichever way it was addressed: keying on the root string for
+    -- one caller and on the repo id for another let the same repo run two pulls at once.
+    local key = "repo:" .. tostring(repo_row.id)
     local inflight = state.pulling[key]
     if inflight then
         -- Coalesce: queue the callback onto the running pull, do NOT start a second fetch.
@@ -713,7 +696,7 @@ local topic_inflight = {}
 --- GraphQL thread-resolved upgrade behind the same seam).
 ---@param root? string|integer  a repo root / buffer (nil when targeting by `opts.repo_id`/`opts.repo_row`)
 ---@param number integer        the topic number
----@param opts? { repo_id?: integer, repo_row?: table, transport?: table, force?: boolean, min_interval?: integer }
+---@param opts? { repo_id?: integer, repo_row?: table, transport?: table, force?: boolean, min_interval?: integer, kind?: "issue"|"pullreq" }
 ---@param cb? fun(ok: boolean, err?: table)
 function M.pull_topic(root, number, opts, cb)
     opts = opts or {}
@@ -738,7 +721,7 @@ function M.pull_topic(root, number, opts, cb)
         return
     end
 
-    local key = ("%d#%d"):format(repo_row.id, number)
+    local key = ("%d#%d%s"):format(repo_row.id, number, opts.kind and ("#" .. opts.kind) or "")
     -- Staleness gate: skip a repeat detail pull within the window (the buffer already rendered the cache).
     if not opts.force then
         local last = state.topic_pulled[key]
@@ -771,10 +754,11 @@ function M.pull_topic(root, number, opts, cb)
         end
     end
 
-    -- Stamp the cached topic's kind so a kind-specific detail endpoint (GitLab) hits the right one; nil
-    -- lets the backend probe (GitHub ignores it).
-    local cached = db.get_topic(repo_row.id, number)
-    ctx.kind = cached and cached.kind or nil
+    -- Stamp the kind so a kind-specific detail endpoint (GitLab) hits the right one: the caller's
+    -- (the topic buffer knows what it opened — on GitLab issue #5 and MR #5 are different topics),
+    -- else the cached row's; nil lets the backend probe (GitHub ignores it).
+    local cached = db.get_topic(repo_row.id, number, opts.kind)
+    ctx.kind = opts.kind or (cached and cached.kind) or nil
 
     backend.topic_detail(ctx, number, function(detail, derr)
         local queued = topic_inflight[key] or {}

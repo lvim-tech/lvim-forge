@@ -539,8 +539,10 @@ function M.topics(repo_id, filter)
         params.milestone_id = filter.milestone_id
     end
     if has(filter.search) then
-        sql[#sql + 1] = "AND (t.title LIKE :search OR t.body LIKE :search)"
-        params.search = "%" .. filter.search .. "%"
+        -- The user's text is a literal: `%` / `_` are LIKE wildcards and must be escaped (a search for
+        -- "100%" matched "100 done"; "a_b" matched "aXb").
+        sql[#sql + 1] = "AND (t.title LIKE :search ESCAPE '\\' OR t.body LIKE :search ESCAPE '\\')"
+        params.search = "%" .. filter.search:gsub("[\\%%_]", "\\%0") .. "%"
     end
     if has(filter.label) then
         sql[#sql + 1] = "AND EXISTS (SELECT 1 FROM topic_labels tl JOIN labels l ON l.id = tl.label_id"
