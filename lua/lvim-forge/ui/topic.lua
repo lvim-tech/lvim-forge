@@ -1332,7 +1332,7 @@ function M.open(root, raw_number, opts)
                     notify("an empty title was not sent", vim.log.levels.WARN)
                     return
                 end
-                actions.set_title(root, number, value, mut_cb("title edit"))
+                actions.set_title(root, number, value, mut_cb("title edit"), { kind = opts.kind })
             end,
         })
     end
@@ -1343,7 +1343,7 @@ function M.open(root, raw_number, opts)
         if not m then
             return
         end
-        M.toggle_state(root, number, m.topic.state, { cb = mut_cb("state change") })
+        M.toggle_state(root, number, m.topic.state, { cb = mut_cb("state change"), action_opts = { kind = opts.kind } })
     end
 
     -- `L` — labels (ui.multiselect seeded from the repo labels, preselected from the topic's set).
@@ -1378,7 +1378,7 @@ function M.open(root, raw_number, opts)
                         names[#names + 1] = it.name
                     end
                 end
-                actions.set_labels(root, number, names, mut_cb("labels"))
+                actions.set_labels(root, number, names, mut_cb("labels"), { kind = opts.kind })
             end,
         })
     end
@@ -1415,7 +1415,7 @@ function M.open(root, raw_number, opts)
                         logins[#logins + 1] = it.login
                     end
                 end
-                actions.set_assignees(root, number, logins, mut_cb("assignees"))
+                actions.set_assignees(root, number, logins, mut_cb("assignees"), { kind = opts.kind })
             end,
         })
     end
@@ -1456,7 +1456,7 @@ function M.open(root, raw_number, opts)
                         logins[#logins + 1] = it.login
                     end
                 end
-                actions.set_reviewers(root, number, logins, mut_cb("reviewers"))
+                actions.set_reviewers(root, number, logins, mut_cb("reviewers"), { kind = opts.kind })
             end,
         })
     end
@@ -1486,7 +1486,7 @@ function M.open(root, raw_number, opts)
                     return
                 end
                 local it = items[idx]
-                actions.set_milestone(root, number, it and it.number, mut_cb("milestone"))
+                actions.set_milestone(root, number, it and it.number, mut_cb("milestone"), { kind = opts.kind })
             end,
         })
     end
@@ -1729,7 +1729,7 @@ function M.open(root, raw_number, opts)
     -- The on-open detail pull: render the cache NOW, fetch THIS topic's full detail in the background
     -- (forced when it is not cached yet, so the buffer fills in), and refresh on LvimForgeTopicChanged.
     local cached = db.get_topic(repo_id, number, opts.kind) ~= nil
-    sync.pull_topic(root, number, { force = not cached })
+    sync.pull_topic(root, number, { force = not cached, kind = opts.kind })
 
     state.panels[view_key] = {
         repo_id = repo_id,

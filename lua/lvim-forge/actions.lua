@@ -142,7 +142,7 @@ function M.comment(root, number, body, cb, opts)
     if type(body) ~= "string" or vim.trim(body) == "" then
         return fail(cb, "empty", "an empty comment was not sent")
     end
-    local topic = db.get_topic(repo_row.id, number)
+    local topic = db.get_topic(repo_row.id, number, opts and opts.kind or nil)
     if not topic then
         return fail(cb, "no_topic", "topic #" .. tostring(number) .. " is not cached")
     end
@@ -175,7 +175,7 @@ function M.edit_post(root, number, target, body, cb, opts)
     if not backend then
         return
     end
-    local topic = db.get_topic(repo_row.id, number)
+    local topic = db.get_topic(repo_row.id, number, opts and opts.kind or nil)
     if not topic then
         return fail(cb, "no_topic", "topic #" .. tostring(number) .. " is not cached")
     end
@@ -223,7 +223,7 @@ function M.set_title(root, number, title, cb, opts)
     if type(title) ~= "string" or vim.trim(title) == "" then
         return fail(cb, "empty", "an empty title was not sent")
     end
-    local topic = db.get_topic(repo_row.id, number)
+    local topic = db.get_topic(repo_row.id, number, opts and opts.kind or nil)
     ctx.kind, ctx.number = topic and topic.kind, number
     local spec = backend.update_issue(ctx, number, { title = title })
     spec.entity = "topic"
@@ -250,7 +250,7 @@ function M.set_state(root, number, new_state, cb, opts)
     if not backend then
         return
     end
-    local topic = db.get_topic(repo_row.id, number)
+    local topic = db.get_topic(repo_row.id, number, opts and opts.kind or nil)
     ctx.kind, ctx.number = topic and topic.kind, number
     local spec = backend.update_issue(ctx, number, { state = new_state })
     spec.entity = "topic"
@@ -284,7 +284,7 @@ function M.set_lock(root, number, lock, cb, opts)
     if type(backend.lock_issue) ~= "function" then
         return fail(cb, "unsupported", repo_row.forge .. " does not support locking a conversation")
     end
-    local topic = db.get_topic(repo_row.id, number)
+    local topic = db.get_topic(repo_row.id, number, opts and opts.kind or nil)
     ctx.kind, ctx.number = topic and topic.kind, number
     local spec = backend.lock_issue(ctx, number, lock)
     -- Route the spec to this repo's forge/host/base (+ the injected test transport) — the same stamping
@@ -423,7 +423,7 @@ function M.set_labels(root, number, names, cb, opts)
     if not backend then
         return
     end
-    local topic = db.get_topic(repo_row.id, number)
+    local topic = db.get_topic(repo_row.id, number, opts and opts.kind or nil)
     ctx.kind, ctx.number = topic and topic.kind, number
 
     -- A backend whose label set is a DEDICATED endpoint (Gitea: no labels field on the issue PATCH, and
@@ -495,7 +495,7 @@ function M.set_assignees(root, number, logins, cb, opts)
     if not backend then
         return
     end
-    local topic = db.get_topic(repo_row.id, number)
+    local topic = db.get_topic(repo_row.id, number, opts and opts.kind or nil)
     local kind = topic and topic.kind or "issue"
     ctx.kind, ctx.number = kind, number
     -- The assignee write may need a username→id resolution (GitLab) → the backend PREPARES the spec
@@ -529,7 +529,7 @@ function M.set_milestone(root, number, milestone_number, cb, opts)
     if not backend then
         return
     end
-    local topic = db.get_topic(repo_row.id, number)
+    local topic = db.get_topic(repo_row.id, number, opts and opts.kind or nil)
     local kind = topic and topic.kind or "issue"
     ctx.kind, ctx.number = kind, number
     -- Resolve the cached milestones row by its per-repo number so the backend can pick the right wire id
@@ -573,7 +573,7 @@ function M.set_reviewers(root, number, desired, cb, opts)
     if not backend then
         return
     end
-    local topic = db.get_topic(repo_row.id, number)
+    local topic = db.get_topic(repo_row.id, number, opts and opts.kind or nil)
     if not topic then
         return fail(cb, "no_topic", "topic #" .. tostring(number) .. " is not cached")
     end

@@ -1504,7 +1504,7 @@ function M.open(root, number, opts)
 
     -- Fill the cache in the background (threads / files / base_ref) — the refresh event re-anchors.
     local cached = topic ~= nil and topic.pullreq ~= nil
-    sync.pull_topic(root, pr_number, { force = not cached })
+    sync.pull_topic(root, pr_number, { force = not cached, kind = "pullreq" })
 
     local ok_git, diff = pcall(require, "lvim-git.ui.diff")
     if ok_git and type(diff.open) == "function" then

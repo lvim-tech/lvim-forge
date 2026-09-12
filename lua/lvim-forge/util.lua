@@ -37,6 +37,25 @@ function M.iso_epoch(iso)
     return as_local - offset
 end
 
+--- The topic KIND a forge API / html url points at: GitHub `/pulls/N` (`/pull/N` in html urls),
+--- GitLab `/merge_requests/N` → "pullreq"; `/issues/N` → "issue"; nil when the url names neither.
+--- GitLab issues and merge requests have SEPARATE iid spaces, so a number alone cannot identify a
+--- topic there — every url-derived lookup must carry this kind.
+---@param url? string
+---@return "pullreq"|"issue"|nil
+function M.topic_kind_from_url(url)
+    if type(url) ~= "string" then
+        return nil
+    end
+    if url:match("/pulls?/%d+") or url:match("/merge_requests/%d+") then
+        return "pullreq"
+    end
+    if url:match("/issues/%d+") then
+        return "issue"
+    end
+    return nil
+end
+
 --- A short relative date ("3h", "2d", "5mo", "1y") for the dim row meta. Empty string when the
 --- timestamp is missing or unparseable — callers render it inline, so a placeholder would be noise.
 ---@param iso? string

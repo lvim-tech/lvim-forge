@@ -270,9 +270,13 @@ local function submit()
                 notify("nothing to send (the comment is empty)", vim.log.levels.WARN)
                 return
             end
-            actions.comment(root, number, body, done, cstate.action_opts)
+            -- The composer knows the topic's kind (GitLab: issue #5 and MR #5 are different topics);
+            -- carry it into the verb's cached-topic lookup with whatever test seam opts were given.
+            local verb_opts = vim.tbl_extend("keep", { kind = cstate.kind }, cstate.action_opts or {})
+            actions.comment(root, number, body, done, verb_opts)
         else
-            actions.edit_post(root, number, cstate.target or {}, body, done, cstate.action_opts)
+            local verb_opts = vim.tbl_extend("keep", { kind = cstate.kind }, cstate.action_opts or {})
+            actions.edit_post(root, number, cstate.target or {}, body, done, verb_opts)
         end
     elseif mode == "issue" then
         local title = title_text(cstate.title_buf)

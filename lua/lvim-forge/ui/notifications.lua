@@ -73,15 +73,12 @@ local function note_number(n)
     return tonumber(url:match("/(%d+)%s*$"))
 end
 
---- The topic KIND (`pullreq`|`issue`) inferred from the notification's subject url (`/pulls/` → PR).
+--- The topic KIND (`pullreq`|`issue`) inferred from the notification's subject url (GitHub `/pulls/`,
+--- GitLab `/merge_requests/` → PR; see util.topic_kind_from_url).
 ---@param n table  a notifications row
 ---@return "pullreq"|"issue"
 local function note_kind(n)
-    local url = n.url or ""
-    if url:match("/pulls?/%d+") then
-        return "pullreq"
-    end
-    return "issue"
+    return require("lvim-forge.util").topic_kind_from_url(n.url) or "issue"
 end
 
 --- The reason BADGE text (a Nerd glyph + a short label) for a notification reason, from
