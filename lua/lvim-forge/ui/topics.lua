@@ -36,10 +36,10 @@ local M = {}
 ---@type string
 local VIEW = "topics"
 
--- ── glyphs (verified single-width Nerd Font, + the `➤` pointer canon) ──────────
+-- ── glyphs (verified single-width Nerd Font, + the `󰅂` pointer canon) ──────────
 local GLYPH = {
     repo = "\u{ea62}", --  nf-cod-repo (title + repo band)
-    arrow = "➤", -- band segment separator (the pointer canon)
+    arrow = "󰅂", -- band segment separator (the pointer canon)
     unread = "\u{f444}", --  nf-oct-dot_fill (the unread accent dot)
 }
 

@@ -42,13 +42,13 @@ local VIEW = "notifications"
 ---@type integer
 local MANY = 3
 
--- ── glyphs (verified single-width Nerd Font, + the `➤` pointer canon) ──────────
+-- ── glyphs (verified single-width Nerd Font, + the `󰅂` pointer canon) ──────────
 local GLYPH = {
     bell = "\u{f0f3}", --  nf-fa-bell (title + repo band)
-    arrow = "➤", -- band / row segment separator (the pointer canon)
+    arrow = "󰅂", -- band / row segment separator (the pointer canon)
     unread = "\u{f444}", --  nf-oct-dot_fill (the unread accent dot)
-    fold_open = "\u{f0d7}", --  nf-fa-caret_down  (section expanded)
-    fold_closed = "\u{f0da}", --  nf-fa-caret_right (section collapsed)
+    fold_open = "\u{f0140}", --  nf-md-chevron_down  (section expanded)
+    fold_closed = "\u{f0142}", --  nf-md-chevron_right (section collapsed)
 }
 
 ---@param msg string

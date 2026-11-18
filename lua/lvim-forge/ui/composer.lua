@@ -37,15 +37,15 @@ local cursor = require("lvim-utils.cursor")
 
 local M = {}
 
--- ── glyphs (verified single-width Nerd Font, + the `➤` pointer canon) ──────────
+-- ── glyphs (verified single-width Nerd Font, + the `󰅂` pointer canon) ──────────
 local GLYPH = {
     issue = "\u{f41b}", --  nf-oct-issue_opened (composer title / new issue)
     comment = "\u{f075}", --  nf-fa-comment
     pull = "\u{e726}", --  nf-dev-git_pull_request
     pencil = "\u{f044}", --  nf-fa-pencil_square_o (edit)
-    branch = "\u{e725}", --  nf-dev-git_branch (base ➤ head)
+    branch = "\u{e725}", --  nf-dev-git_branch (base 󰅂 head)
     review = "\u{f441}", --  nf-oct-eye (review comment / summary)
-    arrow = "➤", -- the pointer canon
+    arrow = "󰅂", -- the pointer canon
 }
 
 --- The active composer (a singleton — one composer at a time, like the commit panel).

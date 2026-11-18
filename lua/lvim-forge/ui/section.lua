@@ -10,7 +10,7 @@
 -- `rows(root)` is SYNCHRONOUS and RENDER-SAFE (a DB read only — the status surface calls it on every
 -- rebuild). It resolves the tracked repo for `root`, returns nil for an untracked / undetectable root (the
 -- section simply hides, content-gated), and otherwise returns: a header row
--- `<N> open pull requests ➤ <M> assigned issues ➤ <K> review requests` + the top few rows per bucket
+-- `<N> open pull requests 󰅂 <M> assigned issues 󰅂 <K> review requests` + the top few rows per bucket
 -- (`config.status_section.max_rows`, deduped), each row carrying its topic number so `<CR>` / click opens
 -- the lvim-forge topic buffer.
 --
@@ -33,11 +33,11 @@ local state = require("lvim-forge.state")
 
 local M = {}
 
--- ── glyphs (verified single-width Nerd Font, + the `➤` separator canon) ─────────
+-- ── glyphs (verified single-width Nerd Font, + the `󰅂` separator canon) ─────────
 local GLYPH = {
     pull = config.icons.pull or "\u{f407}", --  git pull request
     issue = config.icons.issue or "\u{f41b}", --  issue
-    arrow = "➤", -- the count-group / segment separator (the pointer canon)
+    arrow = "󰅂", -- the count-group / segment separator (the pointer canon)
 }
 
 ---@type boolean  guards the one-time register + autocmd wiring

@@ -1,7 +1,7 @@
 -- lvim-forge.ui.topic: the READ-ONLY TOPIC BUFFER — one issue or pull request rendered in full from the
 -- local SQLite cache ONLY (instant + offline). Built on the `lvim-ui.tabs` menu surface (the lvim-git
 -- status chassis pattern): two header CHIP bands (a topic band
--- `<state-icon> #N ➤ <title>` + a state chip; a META band of label/milestone/assignee/reviewer chips, +
+-- `<state-icon> #N 󰅂 <title>` + a state chip; a META band of label/milestone/assignee/reviewer chips, +
 -- for PRs the `+adds/-dels`, base ← head, and mergeable/review-decision glyph), then ONE scrollable panel
 -- of collapsible `ui.section` fold headers (fold-header canon — the plugin passes only the accent, the
 -- tints are global via `lvim-utils.highlight.section_accent`):
@@ -99,12 +99,12 @@ end
 ---@type string
 local VIEW = "topic"
 
--- ── glyphs (verified single-width Nerd Font, + the `➤` pointer canon) ──────────
+-- ── glyphs (verified single-width Nerd Font, + the `󰅂` pointer canon) ──────────
 local GLYPH = {
     repo = "\u{ea62}", --  nf-cod-repo (border title)
-    arrow = "➤", -- band segment separator / pointer (the canon)
-    fold_open = "\u{f0d7}", --  nf-fa-caret_down  (section expanded)
-    fold_closed = "\u{f0da}", --  nf-fa-caret_right (section collapsed)
+    arrow = "󰅂", -- band segment separator / pointer (the canon)
+    fold_open = "\u{f0140}", --  nf-md-chevron_down  (section expanded)
+    fold_closed = "\u{f0142}", --  nf-md-chevron_right (section collapsed)
     dot = "\u{f444}", --  nf-oct-dot_fill (system event)
     milestone = "\u{f51b}", --  nf-oct-milestone
     person = "\u{f007}", --  nf-fa-user (assignees)
@@ -535,7 +535,7 @@ function M.open(root, raw_number, opts)
         return { type = "separator", text = "  ", style = { hl = "LvimForgeMeta" } }
     end
 
-    --- The topic band: `<state-icon> #N ➤ <title>` + a state chip.
+    --- The topic band: `<state-icon> #N 󰅂 <title>` + a state chip.
     ---@param m table
     ---@return table
     local function topic_band(m)
@@ -647,7 +647,7 @@ function M.open(root, raw_number, opts)
         }
     end
 
-    --- A comment as its own section (author ➤ rel-date header + body). The band wears the PARTICIPANT's own
+    --- A comment as its own section (author 󰅂 rel-date header + body). The band wears the PARTICIPANT's own
     --- stable accent (see `highlights.author_accent`), so one person's comments read as one colour down the
     --- whole thread instead of every band being the same yellow.
     ---@param p table  a posts row (kind = comment)
@@ -945,7 +945,7 @@ function M.open(root, raw_number, opts)
         end
         local rows = { topic_band(m), meta_band(m) }
         -- The description is the topic AUTHOR's opening post, so its band reads exactly like every comment's
-        -- (`author ➤ rel-date`, in that participant's own accent) instead of being the one band labelled by
+        -- (`author 󰅂 rel-date`, in that participant's own accent) instead of being the one band labelled by
         -- ROLE. The timeline's `opened this issue` event already says what it is.
         local desc_label = (m.topic.author or "?") .. "  " .. GLYPH.arrow .. " " .. util.rel_date(m.topic.created)
         local desc_accent = highlights.author_accent(m.topic.author, m.topic.author, state.viewer[repo_row.host])

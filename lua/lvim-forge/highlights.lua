@@ -87,7 +87,7 @@ function M.build(c)
         LvimForgeThreadOutdated = { fg = c.fg_dark, italic = true },
 
         -- ── review workspace overlay (the virt_lines thread layer on the diff) ──
-        LvimForgeReviewMarker = { fg = c.blue, bold = true }, -- the ➤ thread pointer
+        LvimForgeReviewMarker = { fg = c.blue, bold = true }, -- the 󰅂 thread pointer
         LvimForgeReviewAuthor = { fg = c.blue, bold = true }, -- comment author in the overlay
         LvimForgeReviewBody = { fg = c.fg }, -- comment body text
         LvimForgeReviewDate = { fg = c.fg_dark, italic = true }, -- rel-date in the overlay

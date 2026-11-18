@@ -15,7 +15,7 @@
 -- hook) and offers `diff.show_file(path)` to jump the diff across files (drives `]t`/`[t`). We add nothing to
 -- the diff itself — only listen + call.
 --
--- Each thread renders collapsed as a one-liner (`➤ author  first-body-line  [resolved]/[outdated]  ▸ (N)`);
+-- Each thread renders collapsed as a one-liner (`󰅂 author  first-body-line  [resolved]/[outdated]  ▸ (N)`);
 -- `<Tab>`/`za`/`<CR>` on the thread's line toggles the FULL thread (every comment: author · rel-date + body).
 -- `]t`/`[t` walk every thread across all files in file→line order (jumping the diff to another file via the
 -- seam when needed). Unresolved threads show by default; resolved ones are hidden unless
@@ -54,12 +54,12 @@ local M = {}
 ---@type string
 local VIEW = "review"
 
--- ── glyphs (verified single-width Nerd Font, + the `➤` pointer canon) ──────────
+-- ── glyphs (verified single-width Nerd Font, + the `󰅂` pointer canon) ──────────
 local GLYPH = {
     review = "\u{f441}", --  nf-oct-eye (border title)
-    pointer = "➤", -- comment author pointer (the canon)
-    collapsed = "\u{f0da}", --  nf-fa-caret_right (collapsed thread)
-    expanded = "\u{f0d7}", --  nf-fa-caret_down (expanded thread)
+    pointer = "󰅂", -- comment author pointer (the canon)
+    collapsed = "\u{f0142}", --  nf-md-chevron_right (collapsed thread)
+    expanded = "\u{f0140}", --  nf-md-chevron_down (expanded thread)
     file_added = "\u{f457}", --  nf-oct-diff_added
     file_modified = "\u{f459}", --  nf-oct-diff_modified
     file_removed = "\u{f458}", --  nf-oct-diff_removed

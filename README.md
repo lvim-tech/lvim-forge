@@ -38,7 +38,7 @@ caps model already admits it, and a Bitbucket backend module is the only thing m
 ## Features
 
 - **Topic list** (`:LvimForge topics` / `issues` / `pulls`) — one row per issue / PR (unread dot +
-  state icon + `#number` + title + label chips + `author ➤ date`), a three-group filter band
+  state icon + `#number` + title + label chips + `author 󰅂 date`), a three-group filter band
   (kind ● state ● involvement) with live per-button counts, a `/` structured query
   (`label: author: milestone: mark: #n` + free text), and a session-sticky filter.
 - **Topic buffer** (`:LvimForge topic <n>`) — two header chip bands + a scrollable panel of folds:
