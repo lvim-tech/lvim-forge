@@ -66,6 +66,46 @@ local GLYPH = {
     file_renamed = "\u{f47c}", --  nf-oct-diff_renamed
 }
 
+--- Virt chunks for one UI glyph wrapped in `before` / `after` text of the same group. With lvim-icons drawing
+--- UI icons as images ("material") the glyph becomes its image cells in a chunk of its own, painted with the
+--- image's group (its fg IS the image id, so `group` must not cover those bytes); anywhere else the single
+--- chunk it always was.
+---@param glyph string
+---@param group string
+---@param before? string
+---@param after? string
+---@return table[] chunks
+local function icon_chunks(glyph, group, before, after)
+    before, after = before or "", after or ""
+    local ok, iconlib = pcall(require, "lvim-utils.icons")
+    if ok and iconlib.ui_text then
+        local t, h, img = iconlib.ui_text(glyph, group)
+        if img then
+            local out = {}
+            if before ~= "" then
+                out[#out + 1] = { before, group }
+            end
+            out[#out + 1] = { t, h }
+            if after ~= "" then
+                out[#out + 1] = { after, group }
+            end
+            return out
+        end
+    end
+    return { { before .. glyph .. after, group } }
+end
+
+--- Append every chunk of `more` to `chunks`.
+---@param chunks table[]
+---@param more table[]
+---@return table[] chunks
+local function extend(chunks, more)
+    for _, c in ipairs(more) do
+        chunks[#chunks + 1] = c
+    end
+    return chunks
+end
+
 ---@param msg string
 ---@param level? integer
 local function notify(msg, level)
@@ -254,13 +294,13 @@ end
 function M.collapsed_virt(a)
     local marker = a.pending and "LvimForgeReviewPending" or "LvimForgeReviewMarker"
     local first = a.comments[1] or {}
-    local chunks = {
-        { "  ", "LvimForgeReviewBody" },
-        { GLYPH.pointer .. " ", marker },
+    local chunks = { { "  ", "LvimForgeReviewBody" } }
+    extend(chunks, icon_chunks(GLYPH.pointer, marker, "", " "))
+    extend(chunks, {
         { first.author or "?", "LvimForgeReviewAuthor" },
         { "  ", "LvimForgeReviewBody" },
         { trunc(first_line(first.body), 60), "LvimForgeReviewBody" },
-    }
+    })
     if a.pending then
         chunks[#chunks + 1] = { "  [pending]", "LvimForgeReviewPending" }
     end
@@ -270,7 +310,7 @@ function M.collapsed_virt(a)
     if a.outdated then
         chunks[#chunks + 1] = { "  [outdated]", "LvimForgeReviewOutdated" }
     end
-    chunks[#chunks + 1] = { ("  %s (%d)"):format(GLYPH.collapsed, a.count), "LvimForgeReviewCaret" }
+    extend(chunks, icon_chunks(GLYPH.collapsed, "LvimForgeReviewCaret", "  ", (" (%d)"):format(a.count)))
     return { chunks }
 end
 
@@ -282,10 +322,8 @@ function M.expanded_virt(a)
     local marker = a.pending and "LvimForgeReviewPending" or "LvimForgeReviewMarker"
     ---@type table[][]
     local lines = {}
-    local head = {
-        { "  ", "LvimForgeReviewBody" },
-        { ("%s thread (%d)"):format(GLYPH.expanded, a.count), "LvimForgeReviewCaret" },
-    }
+    local head = { { "  ", "LvimForgeReviewBody" } }
+    extend(head, icon_chunks(GLYPH.expanded, "LvimForgeReviewCaret", "", (" thread (%d)"):format(a.count)))
     if a.pending then
         head[#head + 1] = { "  [pending]", "LvimForgeReviewPending" }
     end
@@ -297,11 +335,10 @@ function M.expanded_virt(a)
     end
     lines[#lines + 1] = head
     for _, cmt in ipairs(a.comments) do
-        lines[#lines + 1] = {
-            { "  " .. GLYPH.pointer .. " ", marker },
+        lines[#lines + 1] = extend(icon_chunks(GLYPH.pointer, marker, "  ", " "), {
             { cmt.author or "?", "LvimForgeReviewAuthor" },
             { "  ·  " .. util.rel_date(cmt.created), "LvimForgeReviewDate" },
-        }
+        })
         for _, bl in ipairs(body_lines(cmt.body)) do
             lines[#lines + 1] = { { "      ", "LvimForgeReviewBody" }, { bl, "LvimForgeReviewBody" } }
         end
@@ -519,7 +556,7 @@ local function place_overlays(ev)
                 else
                     local marker = a.pending and "LvimForgeReviewPending" or "LvimForgeReviewMarker"
                     pcall(api.nvim_buf_set_extmark, buf, S.ns, row, 0, {
-                        virt_text = { { ("  %s (%d)"):format(GLYPH.pointer, a.count), marker } },
+                        virt_text = icon_chunks(GLYPH.pointer, marker, "  ", (" (%d)"):format(a.count)),
                         virt_text_pos = "eol",
                     })
                 end
